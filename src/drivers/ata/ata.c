@@ -122,12 +122,12 @@ int ata_write_sector(uint32_t lba, const void *buffer)
     int result = ata_wait_bsy();
 
     if (result != 0)
-        return -10 + result;   // -11 timeout, -12 error, etc.
+        return result;
 
     result = ata_wait_drq();
 
     if (result != 0)
-        return -20 + result;   // -21 timeout, -22 error
+        return result;
 
     for (int i = 0; i < 256; i++)
         outw(ATA_DATA, buf[i]);
@@ -135,7 +135,7 @@ int ata_write_sector(uint32_t lba, const void *buffer)
     result = ata_flush();
 
     if (result != 0)
-        return -60 + result;   // -61 timeout, -62 error
+        return result;
 
     return 0;
 }

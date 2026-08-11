@@ -44,8 +44,11 @@ $(BUILD)/os.iso: $(BUILD)/kernel.elf grub.cfg
 	cp grub.cfg $(BUILD)/iso/boot/grub/
 	$(GRUB_MKRESCUE) -o $@ $(BUILD)/iso
 
-run: all
-	$(QEMU) -cdrom $(BUILD)/os.iso -m 512M
+run: all disk.img
+	$(QEMU) -cdrom $(BUILD)/os.iso -drive file=disk.img,format=raw,if=ide -m 512M
+
+disk.img:
+	dd if=/dev/zero of=disk.img bs=1M count=64
 
 clean:
 	rm -rf $(BUILD)
