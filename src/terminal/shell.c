@@ -106,12 +106,25 @@ static void execute_command(void) {
         }
     } else if (str_eq(cmd_buf, "diskwrite")) {
         uint8_t sector[512] = {0};
-        sector[0] = 'N'; sector[1] = 'A'; sector[2] = 'N';
-        sector[3] = 'O'; sector[4] = 'O'; sector[5] = 'S';
-        if (ata_write_sector(0, sector) == 0)
-            terminal_print("Write successful\n");
+        sector[0] = 'N';
+        sector[1] = 'A';
+        sector[2] = 'N';
+        sector[3] = 'O';
+        sector[4] = 'O';
+        sector[5] = 'S';
+        terminal_print("Writing sector 0...\n");
+        int r = ata_write_sector(0, sector);
+        terminal_print("ATA result: ");
+        if (r == 0)
+            terminal_print("SUCCESS\n");
+        else if (r == -1)
+            terminal_print("TIMEOUT\n");
+        else if (r == -2)
+            terminal_print("ATA ERROR\n");
+        else if (r == -3)
+            terminal_print("DEVICE FAULT\n");
         else
-            terminal_print("Write failed\n");
+            terminal_print("UNKNOWN ERROR\n");
     } else if (str_eq(cmd_buf, "format")) {
         fs_format();
         terminal_print("Disk formatted\n");

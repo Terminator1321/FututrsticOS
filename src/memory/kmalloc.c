@@ -1,7 +1,7 @@
 #include "kmalloc.h"
 #include <stdint.h>
 
-#define KERNEL_HEAP_SIZE (1024 * 1024)
+#define KERNEL_HEAP_SIZE (16 * 1024 * 1024)
 
 static uint8_t kernel_heap[KERNEL_HEAP_SIZE];
 static size_t heap_offset = 0;
