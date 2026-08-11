@@ -40,16 +40,44 @@ int fb_init(void *mb2_info) {
     return 0;
 }
 
-void fb_enable_backbuffer(void) {
+// void fb_enable_backbuffer(void) {
+//     if (draw_buf)
+//         return;
+//     uint32_t total = fb_w * fb_h;
+//     draw_buf = kmalloc(total * sizeof(uint32_t));
+//     display_buf = kmalloc(total * sizeof(uint32_t));
+//     if (!draw_buf || !display_buf)
+//         return;
+//     for (uint32_t i = 0; i < total; i++)
+//         draw_buf[i] = display_buf[i] = 0;
+// }
+
+void fb_enable_backbuffer(void)
+{
     if (draw_buf)
         return;
+
     uint32_t total = fb_w * fb_h;
-    draw_buf = kmalloc(total * sizeof(uint32_t));
-    display_buf = kmalloc(total * sizeof(uint32_t));
-    if (!draw_buf || !display_buf)
+    uint64_t bytes = (uint64_t)total * sizeof(uint32_t);
+
+    uint32_t *new_draw = kmalloc(bytes);
+    uint32_t *new_display = kmalloc(bytes);
+
+    if (!new_draw || !new_display)
+    {
+        draw_buf = 0;
+        display_buf = 0;
         return;
+    }
+
+    draw_buf = new_draw;
+    display_buf = new_display;
+
     for (uint32_t i = 0; i < total; i++)
-        draw_buf[i] = display_buf[i] = 0;
+    {
+        draw_buf[i] = 0;
+        display_buf[i] = 0;
+    }
 }
 
 int fb_width(void) { return (int)fb_w; }
@@ -210,4 +238,14 @@ void fb_present(void) {
         return;
     fb_rect_t full = {0, 0, (int)fb_w, (int)fb_h};
     fb_present_rects(&full, 1);
+}
+
+uint64_t fb_physical_address(void)
+{
+    return (uint64_t)(uintptr_t)fb_addr;
+}
+
+uint64_t fb_memory_size(void)
+{
+    return (uint64_t)fb_pitch * fb_h;
 }

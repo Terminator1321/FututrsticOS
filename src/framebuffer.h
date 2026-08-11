@@ -36,3 +36,6 @@ void    fb_draw_int(int x, int y, int n, color_t fg, color_t bg);
 void    fb_present_rects(fb_rect_t *rects, int count);
 void    fb_present(void);          // legacy full-screen blit
 void    fb_wait_vsync(void);
+
+uint64_t fb_physical_address(void);
+uint64_t fb_memory_size(void);
