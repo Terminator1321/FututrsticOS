@@ -1,8 +1,8 @@
 #include "vmm.h"
 #include "../framebuffer.h"
+#include "../terminal/terminal.h"
 #include "memory.h"
 #include "pmm.h"
-#include "../terminal/terminal.h"
 
 #define ENTRIES 512
 #define PAGE_MASK 0x000FFFFFFFFFF000ULL
@@ -274,12 +274,50 @@ void vmm_prepare_kernel_space(void) {
     terminal_print("Kernel address space prepared.\n");
 }
 
-void vmm_switch_kernel_space(void)
-{
-    __asm__ volatile(
-        "mov %0, %%cr3"
-        :
-        : "r"(kernel_cr3)
-        : "memory"
-    );
+void vmm_switch_kernel_space(void) {
+    __asm__ volatile("mov %0, %%cr3" : : "r"(kernel_cr3) : "memory");
+}
+
+int vmm_map_kernel_range(uint64_t virtual_address, uint64_t physical_address, uint64_t size,
+                         uint64_t flags) {
+    if (size == 0)
+        return 0;
+
+    uint64_t v_start = virtual_address & ~(PAGE_SIZE - 1);
+
+    uint64_t p_start = physical_address & ~(PAGE_SIZE - 1);
+
+    uint64_t offset = virtual_address & (PAGE_SIZE - 1);
+
+    uint64_t total = size + offset;
+
+    uint64_t pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    for (uint64_t i = 0; i < pages; i++) {
+        int result =
+            map_page_in(kernel_pml4, v_start + i * PAGE_SIZE, p_start + i * PAGE_SIZE, flags);
+
+        if (result != 0)
+            return result;
+    }
+
+    return 0;
+}
+
+int vmm_map_kernel_memory(void) {
+    uint64_t size = fb_buffer_size();
+
+    uint64_t draw = fb_draw_buffer_address();
+
+    uint64_t display = fb_display_buffer_address();
+
+    if (!draw || !display)
+        return -1;
+
+    int result = vmm_map_kernel_range(draw, draw, size, PAGE_WRITABLE);
+
+    if (result != 0)
+        return result;
+
+    return vmm_map_kernel_range(display, display, size, PAGE_WRITABLE);
 }

@@ -1,7 +1,7 @@
 #include "idt.h"
 #include "drivers/keyboard/keyboard.h"
-#include "drivers/timer/timer.h"
 #include "drivers/mouse/mouse.h"
+#include "drivers/timer/timer.h"
 #include "pic.h"
 #include <stdint.h>
 
@@ -27,12 +27,14 @@ static void set_gate(int n, void *handler) {
 
 void idt_init(void) {
     pic_init();
+
     for (int i = 0; i < IDT_ENTRIES; i++)
         set_gate(i, isr_stubs[i]);
+
     idtr.limit = sizeof(idt) - 1;
     idtr.base = (uint64_t)idt;
+
     __asm__ volatile("lidt %0" : : "m"(idtr));
-    __asm__ volatile("sti");
 }
 
 // exception names
@@ -112,18 +114,18 @@ void isr_handler(interrupt_frame_t *frame) {
         uint8_t irq = (uint8_t)(n - 0x20);
 
         switch (irq) {
-            case 0:
-                timer_handler();
-                break;
+        case 0:
+            timer_handler();
+            break;
 
-            case 1:
-                keyboard_handler();
-                break;
+        case 1:
+            keyboard_handler();
+            break;
 
-            case 12:
-                vga[0] = 0x2F00 | 'M';
-                mouse_handler();
-                break;
+        case 12:
+            vga[0] = 0x2F00 | 'M';
+            mouse_handler();
+            break;
         }
 
         pic_send_eoi(irq);

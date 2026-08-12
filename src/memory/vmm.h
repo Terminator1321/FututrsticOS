@@ -21,3 +21,6 @@ uint64_t vmm_get_physical(uint64_t virtual_address);
 
 void vmm_prepare_kernel_space(void);
 void vmm_switch_kernel_space(void);
+int vmm_map_kernel_memory(void);
+
+int vmm_map_kernel_range(uint64_t virtual_address, uint64_t physical_address, uint64_t size, uint64_t flags);

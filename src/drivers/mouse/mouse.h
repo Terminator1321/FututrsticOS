@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+extern volatile uint64_t mouse_irq_count;
 typedef struct {
     int x;
     int y;

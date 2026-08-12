@@ -39,3 +39,6 @@ void    fb_wait_vsync(void);
 
 uint64_t fb_physical_address(void);
 uint64_t fb_memory_size(void);
+uint64_t fb_draw_buffer_address(void);
+uint64_t fb_display_buffer_address(void);
+uint64_t fb_buffer_size(void);

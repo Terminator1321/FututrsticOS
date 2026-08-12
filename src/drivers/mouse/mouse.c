@@ -2,6 +2,7 @@
 #include "../../framebuffer.h"
 #include "../../gui/gui.h"
 #include "../../io.h"
+#include "../../terminal/terminal.h"
 
 #define PS2_DATA 0x60
 #define PS2_STATUS 0x64
@@ -11,6 +12,8 @@
 
 #define CURSOR_W 8
 #define CURSOR_H 8
+
+volatile uint64_t mouse_irq_count = 0;
 
 static const color_t CURSOR_COLOR = RGB(255, 255, 255);
 static const color_t CURSOR_BG_COLOR = RGB(0, 0, 0);
@@ -97,6 +100,8 @@ void mouse_init(void) {
 }
 
 void mouse_handler(void) {
+    mouse_irq_count++;
+
     uint8_t byte = inb(PS2_DATA);
 
     if (packet_index == 0 && !(byte & 0x08)) {
@@ -120,23 +125,29 @@ int mouse_tick(void) {
 
     int dx = (int8_t)packet[1];
     int dy = -(int8_t)packet[2];
-    if (packet[0] & 0x40) dx = 0;
-    if (packet[0] & 0x80) dy = 0;
+    if (packet[0] & 0x40)
+        dx = 0;
+    if (packet[0] & 0x80)
+        dy = 0;
 
     int new_x = mouse_x + dx;
     int new_y = mouse_y + dy;
 
-    if (new_x < 0) new_x = 0;
-    if (new_y < 0) new_y = 0;
-    if (new_x >= fb_width())  new_x = fb_width()  - 1;
-    if (new_y >= fb_height()) new_y = fb_height() - 1;
+    if (new_x < 0)
+        new_x = 0;
+    if (new_y < 0)
+        new_y = 0;
+    if (new_x >= fb_width())
+        new_x = fb_width() - 1;
+    if (new_y >= fb_height())
+        new_y = fb_height() - 1;
 
     if (new_x == mouse_x && new_y == mouse_y && new_buttons == buttons)
         return 0;
 
-    mouse_x  = new_x;
-    mouse_y  = new_y;
-    buttons  = new_buttons;
+    mouse_x = new_x;
+    mouse_y = new_y;
+    buttons = new_buttons;
 
     return 1;
 }

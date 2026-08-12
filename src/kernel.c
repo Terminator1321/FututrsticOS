@@ -11,101 +11,11 @@
 #include "system/system.h"
 #include "terminal/shell.h"
 #include "terminal/terminal.h"
-
-#define TEST_PAGES 16
-
-/* The GUI real deal*/
-// void kmain(void *mb2_info) {
-//     if (fb_init(mb2_info) != 0)
-//         for (;;) __asm__ volatile("hlt");
-
-//     kmalloc_init();
-//     fb_enable_backbuffer();
-
-//     system_width    = fb_width();
-//     system_height   = fb_height();
-//     system_timer_hz = 60;        // 60 ticks/sec = 60fps max
-
-//     terminal_init(system_width, system_height);
-
-//     idt_init();
-//     keyboard_init();
-//     mouse_init();
-//     timer_init(system_timer_hz);
-//     shell_init();
-
-//     uint64_t last_tick = 0;
-
-//     for (;;) {
-//         __asm__ volatile("hlt");  // sleep until any interrupt
-
-//         // only render when a new timer tick has fired
-//         if (timer_ticks == last_tick)
-//             continue;
-//         last_tick = timer_ticks;
-
-//         mouse_tick();
-//         gui_update();
-//         gui_draw();
-//     }
-// }
-
-// void kmain(void *mb2_info)
-// {
-//     if (fb_init(mb2_info) != 0)
-//     {
-//         for (;;)
-//             __asm__ volatile("hlt");
-//     }
-
-//     kmalloc_init();
-
-//     system_width    = fb_width();
-//     system_height   = fb_height();
-//     system_timer_hz = 60;
-
-//     terminal_init(system_width, system_height);
-//     terminal_print("TinyOS 64-bit\n");
-//     terminal_print("-------------------------\n");
-//     terminal_print("Kernel initialized.\n");
-
-//     idt_init();
-//     keyboard_init();
-//     mouse_init();
-//     timer_init(system_timer_hz);
-
-//     shell_init();
-
-//     terminal_print("Interrupts initialized.\n");
-//     terminal_print("Keyboard initialized.\n");
-//     terminal_print("Mouse initialized.\n");
-//     terminal_print("Timer initialized.\n");
-//     terminal_print("-------------------------\n");
-
-//     for (;;)
-//     {
-//         __asm__ volatile("hlt");
-//     }
-// }
-
-static void print_hex64(uint64_t value) {
-    const char *hex = "0123456789ABCDEF";
-    char buffer[19];
-
-    buffer[0] = '0';
-    buffer[1] = 'x';
-    buffer[18] = '\0';
-
-    for (int i = 0; i < 16; i++) {
-        buffer[17 - i] = hex[value & 0xF];
-        value >>= 4;
-    }
-
-    terminal_print(buffer);
-}
-
+#include "io.h"
 void kmain(void *mb2_info)
 {
+    __asm__ volatile("cli");
+
     if (fb_init(mb2_info) != 0)
     {
         for (;;)
@@ -117,15 +27,73 @@ void kmain(void *mb2_info)
     system_timer_hz = 60;
 
     terminal_init(system_width, system_height);
+
     memory_detect(mb2_info);
     pmm_init(mb2_info);
     kmalloc_init();
+
+    terminal_print("Memory initialized.\n");
+
     vmm_init();
     vmm_prepare_kernel_space();
-    terminal_print("Switching address space...\n");
+
+    terminal_print("Kernel space prepared.\n");
+
+    fb_enable_backbuffer();
+
+    terminal_print("Backbuffer allocated.\n");
+    fb_present();
+
+    if (vmm_map_kernel_memory() != 0)
+    {
+        terminal_print("VMM mapping failed.\n");
+        fb_present();
+
+        for (;;)
+            __asm__ volatile("hlt");
+    }
+
     vmm_switch_kernel_space();
-    terminal_print("CR3 switch successful.\n");
+
+    fb_clear(COLOR_DARK);
+    fb_present();
+
+    terminal_print("CR3 OK\n");
+    fb_present();
+
+    idt_init();
+
+    terminal_print("IDT OK\n");
+    fb_present();
+
+    keyboard_init();
+
+    terminal_print("KEYBOARD OK\n");
+    fb_present();
+
+    mouse_init();
+
+    terminal_print("MOUSE OK\n");
+    fb_present();
+
+    timer_init(system_timer_hz);
+
+    terminal_print("TIMER OK\n");
+    fb_present();
+
+    uint8_t mask = inb(0x21);
+    outb(0x21, mask | 0x01);
+
+    terminal_print("TIMER MASKED\n");
+    fb_present();
+
+    __asm__ volatile("sti");
+
+    terminal_print("INTERRUPTS ENABLED\n");
+    fb_present();
 
     for (;;)
+    {
         __asm__ volatile("hlt");
+    }
 }

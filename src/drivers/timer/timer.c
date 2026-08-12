@@ -5,7 +5,10 @@
 #define PIT_COMMAND 0x43
 #define PIT_CHANNEL0 0x40
 #define PIT_BASE_FREQ 1193182
-
+#include "../../terminal/terminal.h"
+#include "../../framebuffer.h"
+#include "../../io.h"
+#include "timer.h"
 volatile uint64_t timer_ticks = 0;
 
 void timer_init(uint32_t frequency) {

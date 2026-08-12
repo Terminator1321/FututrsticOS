@@ -28,7 +28,7 @@ static const char sc_ascii_shift[128] = {
 static volatile char buf[BUF_SIZE];
 static volatile uint8_t buf_head = 0; // write index
 static volatile uint8_t buf_tail = 0; // read  index
-
+volatile uint64_t keyboard_irq_count = 0;
 static void buf_push(char c) {
     uint8_t next = (buf_head + 1) % BUF_SIZE;
     if (next != buf_tail) { // drop if full
@@ -51,6 +51,7 @@ static int caps = 0;
 
 // Called by isr_handler every time IRQ1 fires
 void keyboard_handler(void) {
+    keyboard_irq_count++;
     uint8_t sc = inb(PS2_DATA);
 
     if (sc & 0x80) {

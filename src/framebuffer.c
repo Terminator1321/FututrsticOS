@@ -249,3 +249,18 @@ uint64_t fb_memory_size(void)
 {
     return (uint64_t)fb_pitch * fb_h;
 }
+
+uint64_t fb_draw_buffer_address(void)
+{
+    return (uint64_t)(uintptr_t)draw_buf;
+}
+
+uint64_t fb_display_buffer_address(void)
+{
+    return (uint64_t)(uintptr_t)display_buf;
+}
+
+uint64_t fb_buffer_size(void)
+{
+    return (uint64_t)fb_w * fb_h * sizeof(uint32_t);
+}
