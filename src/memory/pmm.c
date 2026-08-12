@@ -192,15 +192,29 @@ void pmm_print_stats(void)
 
 uint64_t pmm_alloc_pages(uint64_t count)
 {
+    terminal_print("PMM: alloc_pages entered\n");
+    fb_present();
+
     if (count == 0)
         return 0;
+
+    terminal_print("PMM: count valid\n");
+    fb_present();
+
+    if (count > free_pages)
+    {
+        terminal_print("PMM: insufficient pages\n");
+        fb_present();
+        return 0;
+    }
+
+    terminal_print("PMM: scanning bitmap\n");
+    fb_present();
 
     uint64_t consecutive = 0;
     uint64_t start_page = 0;
 
-    for (uint64_t page = 0;
-         page < total_pages;
-         page++)
+    for (uint64_t page = 0; page < total_pages; page++)
     {
         if (!page_is_used(page))
         {
@@ -211,12 +225,17 @@ uint64_t pmm_alloc_pages(uint64_t count)
 
             if (consecutive == count)
             {
+                terminal_print("PMM: free page found\n");
+                fb_present();
+
                 for (uint64_t i = 0; i < count; i++)
-                {
                     page_mark_used(start_page + i);
-                }
 
                 free_pages -= count;
+
+                terminal_print("PMM: allocation complete\n");
+                fb_present();
+
                 return start_page * PAGE_SIZE;
             }
         }
@@ -225,6 +244,9 @@ uint64_t pmm_alloc_pages(uint64_t count)
             consecutive = 0;
         }
     }
+
+    terminal_print("PMM: no pages found\n");
+    fb_present();
 
     return 0;
 }

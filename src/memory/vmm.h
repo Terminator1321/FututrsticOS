@@ -13,7 +13,8 @@ void vmm_init(void);
 
 int vmm_map_page(uint64_t virtual_address, uint64_t physical_address, uint64_t flags);
 
-int vmm_map_range(uint64_t virtual_address, uint64_t physical_address, uint64_t size, uint64_t flags);
+int vmm_map_range(uint64_t virtual_address, uint64_t physical_address, uint64_t size,
+                  uint64_t flags);
 
 void vmm_unmap_page(uint64_t virtual_address);
 
@@ -21,6 +22,17 @@ uint64_t vmm_get_physical(uint64_t virtual_address);
 
 void vmm_prepare_kernel_space(void);
 void vmm_switch_kernel_space(void);
+
 int vmm_map_kernel_memory(void);
 
-int vmm_map_kernel_range(uint64_t virtual_address, uint64_t physical_address, uint64_t size, uint64_t flags);
+int vmm_map_kernel_range(uint64_t virtual_address, uint64_t physical_address, uint64_t size,
+                         uint64_t flags);
+
+uint64_t vmm_create_user_space(void);
+
+int vmm_map_user_page(uint64_t cr3, uint64_t virtual_address, uint64_t physical_address,
+                      uint64_t flags);
+
+uint64_t vmm_get_physical_in(uint64_t cr3, uint64_t virtual_address);
+
+void vmm_switch_address_space(uint64_t cr3);

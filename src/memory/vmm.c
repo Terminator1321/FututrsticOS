@@ -97,8 +97,16 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
         pt = physical_to_table(pd[pd_index]);
     }
 
-    if (pt[pt_index] & PAGE_PRESENT)
+    if (pt[pt_index] & PAGE_PRESENT) {
+        uint64_t existing = pt[pt_index] & PAGE_MASK;
+
+        uint64_t requested = physical_address & PAGE_MASK;
+
+        if (existing == requested)
+            return 0;
+
         return -6;
+    }
 
     pt[pt_index] = (physical_address & PAGE_MASK) | flags | PAGE_PRESENT;
 
@@ -219,6 +227,19 @@ uint64_t vmm_get_physical(uint64_t virtual_address) {
     return get_physical_from(current_pml4, virtual_address);
 }
 
+static int vmm_identity_map_physical_memory(void) {
+    const uint64_t size = 4ULL * 1024 * 1024 * 1024;
+
+    for (uint64_t address = 0; address < size; address += PAGE_SIZE) {
+        int result = map_page_in(kernel_pml4, address, address, PAGE_WRITABLE);
+
+        if (result != 0)
+            return result;
+    }
+
+    return 0;
+}
+
 void vmm_prepare_kernel_space(void) {
     kernel_pml4 = allocate_table();
 
@@ -277,6 +298,18 @@ void vmm_prepare_kernel_space(void) {
     // handler itself does the same faulting write, that turns into a
     // double fault -> triple fault -> the machine resets.
     int vga_result = map_page_in(kernel_pml4, 0xB8000, 0xB8000, PAGE_WRITABLE);
+    terminal_print("VMM: mapping physical memory...\n");
+
+    int identity_result = vmm_identity_map_physical_memory();
+
+    if (identity_result != 0) {
+        terminal_print("VMM: physical memory mapping failed\n");
+
+        for (;;)
+            __asm__ volatile("hlt");
+    }
+
+    terminal_print("VMM: physical memory mapped\n");
 
     if (vga_result != 0) {
         terminal_print("VMM: VGA mapping failed\n");
@@ -291,6 +324,7 @@ void vmm_prepare_kernel_space(void) {
 }
 
 void vmm_switch_kernel_space(void) {
+    current_pml4 = kernel_pml4;
     __asm__ volatile("mov %0, %%cr3" : : "r"(kernel_cr3) : "memory");
 }
 
@@ -336,4 +370,56 @@ int vmm_map_kernel_memory(void) {
         return result;
 
     return vmm_map_kernel_range(display, display, size, PAGE_WRITABLE);
+}
+
+uint64_t vmm_create_user_space(void) {
+    uint64_t *user_pml4 = allocate_table();
+
+    if (!user_pml4)
+        return 0;
+
+    /*
+     * Copy the kernel half of the address space.
+     *
+     * User space will use the lower half.
+     * Kernel mappings remain available after switching
+     * to the user address space.
+     */
+    for (int i = 256; i < ENTRIES; i++)
+        user_pml4[i] = kernel_pml4[i];
+
+    return (uint64_t)(uintptr_t)user_pml4;
+}
+
+int vmm_map_user_page(uint64_t cr3, uint64_t virtual_address, uint64_t physical_address,
+                      uint64_t flags) {
+    if (cr3 == 0)
+        return -1;
+
+    if (virtual_address >= 0x0000800000000000ULL)
+        return -2;
+
+    uint64_t *pml4 = (uint64_t *)(uintptr_t)(cr3 & PAGE_MASK);
+
+    int result = map_page_in(pml4, virtual_address, physical_address, flags | PAGE_USER);
+
+    return result;
+}
+
+uint64_t vmm_get_physical_in(uint64_t cr3, uint64_t virtual_address) {
+    if (cr3 == 0)
+        return 0;
+
+    uint64_t *pml4 = (uint64_t *)(uintptr_t)(cr3 & PAGE_MASK);
+
+    return get_physical_from(pml4, virtual_address);
+}
+
+void vmm_switch_address_space(uint64_t cr3) {
+    if (cr3 == 0)
+        return;
+
+    current_pml4 = (uint64_t *)(uintptr_t)(cr3 & PAGE_MASK);
+
+    __asm__ volatile("mov %0, %%cr3" : : "r"(cr3 & PAGE_MASK) : "memory");
 }

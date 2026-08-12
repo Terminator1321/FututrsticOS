@@ -19,24 +19,56 @@ void kmalloc_init(void) {
     heap_total = 0;
 }
 
-void *kmalloc(size_t size) {
+void *kmalloc(size_t size)
+{
     if (size == 0)
         return 0;
 
-    size_t total_size = sizeof(allocation_header_t) + size;
-    uint64_t pages = (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
-    uint64_t address = pmm_alloc_pages(pages);
+    terminal_print("KMALLOC: calculating pages\n");
+    fb_present();
+
+    size_t total_size =
+        sizeof(allocation_header_t) + size;
+
+    uint64_t pages =
+        (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    terminal_print("KMALLOC: before PMM\n");
+    fb_present();
+
+    uint64_t address =
+        pmm_alloc_pages(pages);
+
+    terminal_print("KMALLOC: after PMM\n");
+    fb_present();
 
     if (address == 0)
+    {
+        terminal_print("KMALLOC: PMM returned 0\n");
+        fb_present();
         return 0;
+    }
 
-    allocation_header_t *header = (allocation_header_t *)(uintptr_t)address;
+    terminal_print("KMALLOC: before header\n");
+    fb_present();
+
+    allocation_header_t *header =
+        (allocation_header_t *)(uintptr_t)address;
+
+    terminal_print("KMALLOC: header pointer created\n");
+    fb_present();
 
     header->magic = KMALLOC_MAGIC;
+
+    terminal_print("KMALLOC: magic written\n");
+    fb_present();
+
     header->pages = pages;
     header->size = size;
+
     heap_used += pages * PAGE_SIZE;
     heap_total += pages * PAGE_SIZE;
+
     return (void *)(header + 1);
 }
 
