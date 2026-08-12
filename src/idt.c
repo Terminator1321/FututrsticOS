@@ -2,7 +2,9 @@
 #include "drivers/keyboard/keyboard.h"
 #include "drivers/mouse/mouse.h"
 #include "drivers/timer/timer.h"
+#include "framebuffer.h"
 #include "pic.h"
+#include "terminal/terminal.h"
 #include <stdint.h>
 
 #define IDT_ENTRIES 256
@@ -89,12 +91,36 @@ static void vga_puthex(uint64_t v, int col) {
         vga[col++] = 0x0F00 | hex[(v >> shift) & 0xF];
 }
 
+// terminal_print only understands strings, so give the panic path its own
+// tiny hex formatter (no snprintf in a freestanding kernel).
+static void term_puthex64(uint64_t v) {
+    const char hex[] = "0123456789ABCDEF";
+    char buffer[19];
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[18] = '\0';
+    for (int i = 0; i < 16; i++) {
+        buffer[17 - i] = hex[v & 0xF];
+        v >>= 4;
+    }
+    terminal_print(buffer);
+}
+
 // the one C handler called by all 256 stubs
 void isr_handler(interrupt_frame_t *frame) {
     uint64_t n = frame->int_num;
 
     if (n < 32) {
-        // CPU exception: print red panic line and halt
+        // CPU exception: print red panic line and halt.
+        //
+        // This used to ONLY write to the legacy VGA text buffer at
+        // 0xB8000. That's invisible on this OS: the display is a linear
+        // framebuffer (see fb_present), not VGA text mode, so any
+        // exception after boot looked like a silent freeze instead of a
+        // visible panic. Print through the real terminal/framebuffer
+        // path too so crashes are actually diagnosable. Keep the VGA
+        // write as a harmless fallback for anyone running under a
+        // text-mode-only display.
         for (int i = 80; i < 160; i++)
             vga[i] = 0x4F00 | ' '; // red background
         vga_puts("EXCEPTION #", 80, 0x4F00);
@@ -107,6 +133,21 @@ void isr_handler(interrupt_frame_t *frame) {
         vga_puthex(frame->error_code, 126);
         vga_puts("  RIP=", 144, 0x4F00);
         vga_puthex(frame->rip, 150);
+
+        terminal_print("\n!! CPU EXCEPTION #");
+        char digits[3] = {(char)('0' + n / 10), (char)('0' + n % 10), '\0'};
+        terminal_print(digits);
+        terminal_print("  ");
+        terminal_print(exc_names[n]);
+        terminal_print("\nERR=");
+        term_puthex64(frame->error_code);
+        terminal_print("  RIP=");
+        term_puthex64(frame->rip);
+        terminal_print("  CS=");
+        term_puthex64(frame->cs);
+        terminal_print("\n");
+        fb_present();
+
         for (;;)
             __asm__ volatile("cli; hlt");
 

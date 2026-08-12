@@ -49,8 +49,27 @@ static int map_range(uint64_t cr3, uint64_t address, uint64_t size, uint64_t fla
     uint64_t end = align_up(address + size);
 
     for (uint64_t va = start; va < end; va += PAGE_SIZE) {
-        if (vmm_get_physical_in(cr3, va) != 0)
+        uint64_t existing = vmm_get_physical_in(cr3, va);
+
+        if (existing != 0) {
+            // Already mapped - almost always because the kernel's own
+            // blanket identity map (built in vmm_prepare_kernel_space,
+            // before any user process exists) already covers this
+            // low-memory address as a supervisor-only page. Re-request
+            // the mapping on the SAME physical page (so we don't leak a
+            // freshly allocated one) but with the permissions this
+            // caller actually needs - map_page_in merges PAGE_USER etc.
+            // into the existing entry. Skipping this step entirely (as
+            // before) left the page technically "mapped" but still
+            // supervisor-only, which is exactly the #PF(present, user
+            // access) ring 3 hits the instant it tries to run.
+            int result = vmm_map_user_page(cr3, va, existing, flags | PAGE_USER);
+
+            if (result != 0)
+                return -2;
+
             continue;
+        }
 
         uint64_t physical = pmm_alloc_page();
 
@@ -72,8 +91,18 @@ static int map_user_stack(uint64_t cr3) {
     uint64_t stack_bottom = RIRU_USER_STACK_TOP - RIRU_USER_STACK_SIZE;
 
     for (uint64_t va = stack_bottom; va < RIRU_USER_STACK_TOP; va += PAGE_SIZE) {
-        if (vmm_get_physical_in(cr3, va) != 0)
+        uint64_t existing = vmm_get_physical_in(cr3, va);
+
+        if (existing != 0) {
+            // See map_range() above - re-request permissions on the
+            // existing physical page instead of leaving it supervisor-only.
+            int result = vmm_map_user_page(cr3, va, existing, PAGE_USER | PAGE_WRITABLE);
+
+            if (result != 0)
+                return -2;
+
             continue;
+        }
 
         uint64_t physical = pmm_alloc_page();
 

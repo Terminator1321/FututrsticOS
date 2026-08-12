@@ -71,6 +71,15 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
             (uint64_t)(uintptr_t)pdpt | PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
     } else {
         pdpt = physical_to_table(pml4[pml4_index]);
+
+        // x86 requires PAGE_USER set at EVERY level of the walk for a ring-3
+        // access to succeed, not just on the final page. This entry may
+        // already exist from the kernel's own (non-user) identity map -
+        // e.g. RIRU user pages share the same low-memory tables the kernel
+        // built for itself - so merge the bit in rather than leaving a
+        // supervisor-only directory that silently blocks every page under
+        // it, no matter how the leaf PTE is flagged.
+        pml4[pml4_index] |= (flags & PAGE_USER);
     }
 
     if (!(pdpt[pdpt_index] & PAGE_PRESENT)) {
@@ -83,6 +92,8 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
             (uint64_t)(uintptr_t)pd | PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
     } else {
         pd = physical_to_table(pdpt[pdpt_index]);
+
+        pdpt[pdpt_index] |= (flags & PAGE_USER);
     }
 
     if (pd[pd_index] & HUGE_PAGE)
@@ -97,6 +108,8 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
         pd[pd_index] = (uint64_t)(uintptr_t)pt | PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
     } else {
         pt = physical_to_table(pd[pd_index]);
+
+        pd[pd_index] |= (flags & PAGE_USER);
     }
 
     if (pt[pt_index] & PAGE_PRESENT) {
@@ -104,8 +117,21 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
 
         uint64_t requested = physical_address & PAGE_MASK;
 
-        if (existing == requested)
+        if (existing == requested) {
+            /*
+             * Same physical page already mapped here (this happens for
+             * RIRU user pages: they live below 4 GB, the same range the
+             * kernel's blanket identity map already covers as
+             * supervisor-only). Merge in any extra permission bits
+             * (PAGE_USER, PAGE_WRITABLE) being requested instead of
+             * silently keeping the old, more restrictive entry - otherwise
+             * the mapping call "succeeds" but ring 3 still can't touch
+             * the page (a page fault the moment the user program is
+             * entered).
+             */
+            pt[pt_index] |= (flags & (PAGE_USER | PAGE_WRITABLE));
             return 0;
+        }
 
         return -6;
     }
@@ -381,12 +407,24 @@ uint64_t vmm_create_user_space(void) {
         return 0;
 
     /*
-     * Copy the kernel half of the address space.
+     * Copy the kernel's mappings into the new address space.
      *
-     * User space will use the lower half.
-     * Kernel mappings remain available after switching
-     * to the user address space.
+     * This kernel is loaded at 0x100000 and identity-maps physical
+     * memory 1:1, so everything the kernel needs (its own code/data,
+     * the IDT handlers, the framebuffer, and the RIRU user program
+     * range at 0x400000-0x40000000) all falls inside PML4 index 0
+     * (any address below 512 GB). Copying indices 256-511 (the
+     * higher-half convention) copies nothing useful here - it left
+     * user_pml4 with an *empty* index 0, so the instant CR3 was
+     * switched to this address space, the very next instruction
+     * fetch (still in low kernel memory) had no mapping at all and
+     * page-faulted; since the fault handler itself lives in that
+     * same now-unmapped memory, that turned into a double fault ->
+     * triple fault -> the machine reset. Copying index 0 keeps the
+     * kernel (and its identity map) resident in every address space.
      */
+    user_pml4[0] = kernel_pml4[0];
+
     for (int i = 256; i < ENTRIES; i++)
         user_pml4[i] = kernel_pml4[i];
 
