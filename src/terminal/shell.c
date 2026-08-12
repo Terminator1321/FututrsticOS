@@ -315,10 +315,6 @@ static void execute_command(void) {
         terminal_putchar('\n');
     } else if (str_eq(cmd_buf, "shutdown")) {
         shutdown_system();
-    } else if (cmd_len != 0) {
-        terminal_print("Unknown command: ");
-        terminal_print(cmd_buf);
-        terminal_putchar('\n');
     } else if (str_eq(cmd_buf, "run")) {
         if (!args || !*args) {
             terminal_print("Usage: run <program>\n");
@@ -330,10 +326,20 @@ static void execute_command(void) {
             else if (r != 0)
                 terminal_print("Failed to start process\n");
         }
-
-        cmd_len = 0;
-        show_prompt();
+    } else if (cmd_len != 0) {
+        terminal_print("Unknown command: ");
+        terminal_print(cmd_buf);
+        terminal_putchar('\n');
     }
+
+    // Every command (or empty Enter) ends here: clear the line buffer and
+    // show a fresh prompt. Previously this only happened inside the "run"
+    // branch, so cmd_len was never reset after any other command - the
+    // buffer just kept growing with every keystroke and no new prompt
+    // ever appeared, which looks exactly like the keyboard stopped
+    // responding.
+    cmd_len = 0;
+    show_prompt();
 }
 
     void shell_init(void) { show_prompt(); }

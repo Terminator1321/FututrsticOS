@@ -151,6 +151,20 @@ void terminal_init(int width, int height) {
     cols = W / CHAR_W;
     rows = H / CHAR_H;
 
+    // screen_buf is a fixed MAX_ROWS x MAX_COLS array. On any framebuffer
+    // bigger than 960x640 (120*8 x 64*10), cols/rows computed above exceed
+    // that size, and terminal_putchar()/scroll_down() would then index and
+    // write past the end of screen_buf's rows - corrupting adjacent rows
+    // and the globals declared after it (buf_row, buf_col, scroll_top).
+    // That's what produced the overlapping/garbled boot text and left the
+    // terminal's row/col state garbage afterward. Clamp to what the buffer
+    // can actually hold.
+    if (cols > MAX_COLS)
+        cols = MAX_COLS;
+
+    if (rows > MAX_ROWS)
+        rows = MAX_ROWS;
+
     terminal_clear();
     redraw_terminal();
     terminal_draw_cursor();

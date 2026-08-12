@@ -99,7 +99,6 @@ void kmain(void *mb2_info) {
 
     shell_init();
 
-    terminal_print("> ");
     fb_present();
 
     __asm__ volatile("sti");
