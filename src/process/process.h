@@ -23,3 +23,4 @@ int process_create(uint64_t entry, uint64_t stack, uint64_t cr3);
 void process_exit_from_syscall(interrupt_frame_t *frame);
 process_t *process_current(void);
 void process_exit_return(void);
+int process_exec(const char *name);

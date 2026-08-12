@@ -1,16 +1,17 @@
 #include "shell.h"
-#include "../fs/fs.h"
 #include "../drivers/ata/ata.h"
 #include "../drivers/timer/timer.h"
+#include "../fs/fs.h"
 #include "../io.h"
 #include "../memory/kmalloc.h"
+#include "../process/process.h"
 #include "../system/system.h"
 #include "terminal.h"
 
 #define CMD_MAX 256
 
 static char cmd_buf[CMD_MAX];
-static int  cmd_len = 0;
+static int cmd_len = 0;
 
 static void print_hex8(uint8_t value) {
     const char hex[] = "0123456789ABCDEF";
@@ -20,8 +21,10 @@ static void print_hex8(uint8_t value) {
 
 static int str_eq(const char *a, const char *b) {
     while (*a && *b) {
-        if (*a != *b) return 0;
-        a++; b++;
+        if (*a != *b)
+            return 0;
+        a++;
+        b++;
     }
     return (*a == '\0' && *b == '\0');
 }
@@ -55,6 +58,7 @@ static void execute_command(void) {
         terminal_print("            stat <name>\n");
         terminal_print("  Dirs    : mkdir <name>, cd <dir>, pwd\n");
         terminal_print("  Other   : say <text>, alloc\n");
+        terminal_print("  Process : run <program>\n");
     } else if (str_eq(cmd_buf, "clear")) {
         terminal_clear();
     } else if (str_eq(cmd_buf, "say")) {
@@ -91,8 +95,10 @@ static void execute_command(void) {
         terminal_print(" bytes\n");
     } else if (str_eq(cmd_buf, "alloc")) {
         void *p = kmalloc(64);
-        if (p) terminal_print("Allocated 64 bytes\n");
-        else   terminal_print("Out of memory\n");
+        if (p)
+            terminal_print("Allocated 64 bytes\n");
+        else
+            terminal_print("Out of memory\n");
     } else if (str_eq(cmd_buf, "diskread")) {
         uint8_t sector[512];
         if (ata_read_sector(0, sector) != 0) {
@@ -138,9 +144,12 @@ static void execute_command(void) {
             terminal_print("Usage: touch <name>\n");
         } else {
             int r = fs_create(args);
-            if      (r ==  0) terminal_print("File created\n");
-            else if (r == -1) terminal_print("Already exists\n");
-            else              terminal_print("Inode table full\n");
+            if (r == 0)
+                terminal_print("File created\n");
+            else if (r == -1)
+                terminal_print("Already exists\n");
+            else
+                terminal_print("Inode table full\n");
         }
     } else if (str_eq(cmd_buf, "ls")) {
         fs_inode_t files[FS_MAX_INODES];
@@ -178,9 +187,12 @@ static void execute_command(void) {
                 terminal_print("Usage: write <file> <text>\n");
             } else {
                 int r = fs_write(args, text);
-                if      (r ==  0) terminal_print("Written\n");
-                else if (r == -2) terminal_print("Is a directory\n");
-                else              terminal_print("File not found\n");
+                if (r == 0)
+                    terminal_print("Written\n");
+                else if (r == -2)
+                    terminal_print("Is a directory\n");
+                else
+                    terminal_print("File not found\n");
             }
         }
     } else if (str_eq(cmd_buf, "append")) {
@@ -199,9 +211,12 @@ static void execute_command(void) {
                 terminal_print("Usage: append <file> <text>\n");
             } else {
                 int r = fs_append(args, text);
-                if      (r ==  0) terminal_print("Appended\n");
-                else if (r == -2) terminal_print("Is a directory\n");
-                else              terminal_print("File not found\n");
+                if (r == 0)
+                    terminal_print("Appended\n");
+                else if (r == -2)
+                    terminal_print("Is a directory\n");
+                else
+                    terminal_print("File not found\n");
             }
         }
     } else if (str_eq(cmd_buf, "cat")) {
@@ -210,18 +225,25 @@ static void execute_command(void) {
         } else {
             char buffer[FS_MAX_BLOCKS * 512];
             int r = fs_read(args, buffer, sizeof(buffer));
-            if      (r >= 0) { terminal_print(buffer); terminal_putchar('\n'); }
-            else if (r == -2) terminal_print("Is a directory\n");
-            else              terminal_print("File not found\n");
+            if (r >= 0) {
+                terminal_print(buffer);
+                terminal_putchar('\n');
+            } else if (r == -2)
+                terminal_print("Is a directory\n");
+            else
+                terminal_print("File not found\n");
         }
     } else if (str_eq(cmd_buf, "rm")) {
         if (!args || !*args) {
             terminal_print("Usage: rm <file>\n");
         } else {
             int r = fs_delete(args);
-            if      (r ==  0) terminal_print("Deleted\n");
-            else if (r == -2) terminal_print("Is a directory – use rmdir\n");
-            else              terminal_print("File not found\n");
+            if (r == 0)
+                terminal_print("Deleted\n");
+            else if (r == -2)
+                terminal_print("Is a directory – use rmdir\n");
+            else
+                terminal_print("File not found\n");
         }
     } else if (str_eq(cmd_buf, "mv")) {
         if (!args || !*args) {
@@ -239,9 +261,12 @@ static void execute_command(void) {
                 terminal_print("Usage: mv <old> <new>\n");
             } else {
                 int r = fs_rename(args, newname);
-                if      (r ==  0) terminal_print("Renamed\n");
-                else if (r == -2) terminal_print("Name already taken\n");
-                else              terminal_print("File not found\n");
+                if (r == 0)
+                    terminal_print("Renamed\n");
+                else if (r == -2)
+                    terminal_print("Name already taken\n");
+                else
+                    terminal_print("File not found\n");
             }
         }
     } else if (str_eq(cmd_buf, "stat")) {
@@ -250,11 +275,15 @@ static void execute_command(void) {
         } else {
             fs_inode_t node;
             if (fs_stat(args, &node) == 0) {
-                terminal_print("Name : "); terminal_print(node.name); terminal_putchar('\n');
+                terminal_print("Name : ");
+                terminal_print(node.name);
+                terminal_putchar('\n');
                 terminal_print("Type : ");
                 terminal_print(node.is_directory ? "directory" : "file");
                 terminal_putchar('\n');
-                terminal_print("Size : "); print_uint(node.size); terminal_print(" bytes\n");
+                terminal_print("Size : ");
+                print_uint(node.size);
+                terminal_print(" bytes\n");
             } else {
                 terminal_print("Not found\n");
             }
@@ -264,17 +293,22 @@ static void execute_command(void) {
             terminal_print("Usage: mkdir <name>\n");
         } else {
             int r = fs_mkdir(args);
-            if      (r ==  0) terminal_print("Directory created\n");
-            else if (r == -1) terminal_print("Already exists\n");
-            else              terminal_print("Inode table full\n");
+            if (r == 0)
+                terminal_print("Directory created\n");
+            else if (r == -1)
+                terminal_print("Already exists\n");
+            else
+                terminal_print("Inode table full\n");
         }
     } else if (str_eq(cmd_buf, "cd")) {
         if (!args || !*args) {
             terminal_print("Usage: cd <directory>\n");
         } else {
             int r = fs_change_dir(args);
-            if      (r == -1) terminal_print("Not found\n");
-            else if (r == -2) terminal_print("Not a directory\n");
+            if (r == -1)
+                terminal_print("Not found\n");
+            else if (r == -2)
+                terminal_print("Not a directory\n");
         }
     } else if (str_eq(cmd_buf, "pwd")) {
         terminal_print(fs_get_pwd());
@@ -285,55 +319,71 @@ static void execute_command(void) {
         terminal_print("Unknown command: ");
         terminal_print(cmd_buf);
         terminal_putchar('\n');
-    }
+    } else if (str_eq(cmd_buf, "run")) {
+        if (!args || !*args) {
+            terminal_print("Usage: run <program>\n");
+        } else {
+            int r = process_exec(args);
 
-    cmd_len = 0;
-    show_prompt();
-}
-
-void shell_init(void) {
-    show_prompt();
-}
-
-void shell_input(char c) {
-    if (c == '\n') {
-        execute_command();
-        return;
-    }
-    if (c == '\b') {
-        if (cmd_len > 0) {
-            cmd_len--;
-            terminal_putchar('\b');
+            if (r == -2)
+                terminal_print("Process already running\n");
+            else if (r != 0)
+                terminal_print("Failed to start process\n");
         }
-        return;
+
+        cmd_len = 0;
+        show_prompt();
     }
-    if (cmd_len >= CMD_MAX - 1) return;
-    cmd_buf[cmd_len++] = c;
-    terminal_putchar(c);
 }
 
-void print_uint(uint64_t value) {
-    char buf[21];
-    int i = 0;
-    if (value == 0) { terminal_putchar('0'); return; }
-    while (value > 0) {
-        buf[i++] = '0' + (value % 10);
-        value /= 10;
+    void shell_init(void) { show_prompt(); }
+
+    void shell_input(char c) {
+        if (c == '\n') {
+            execute_command();
+            return;
+        }
+        if (c == '\b') {
+            if (cmd_len > 0) {
+                cmd_len--;
+                terminal_putchar('\b');
+            }
+            return;
+        }
+        if (cmd_len >= CMD_MAX - 1)
+            return;
+        cmd_buf[cmd_len++] = c;
+        terminal_putchar(c);
     }
-    while (i > 0)
-        terminal_putchar(buf[--i]);
-}
 
-void reboot_system(void) {
-    while (inb(0x64) & 0x02);
-    outb(0x64, 0xFE);
-    for (;;) __asm__ volatile("hlt");
-}
+    void print_uint(uint64_t value) {
+        char buf[21];
+        int i = 0;
+        if (value == 0) {
+            terminal_putchar('0');
+            return;
+        }
+        while (value > 0) {
+            buf[i++] = '0' + (value % 10);
+            value /= 10;
+        }
+        while (i > 0)
+            terminal_putchar(buf[--i]);
+    }
 
-void shutdown_system(void) {
-    terminal_print("Shutting down...\n");
-    outw(0xB004, 0x2000);
-    outw(0x604,  0x2000);
-    outw(0x4004, 0x3400);
-    for (;;) __asm__ volatile("hlt");
-}
+    void reboot_system(void) {
+        while (inb(0x64) & 0x02)
+            ;
+        outb(0x64, 0xFE);
+        for (;;)
+            __asm__ volatile("hlt");
+    }
+
+    void shutdown_system(void) {
+        terminal_print("Shutting down...\n");
+        outw(0xB004, 0x2000);
+        outw(0x604, 0x2000);
+        outw(0x4004, 0x3400);
+        for (;;)
+            __asm__ volatile("hlt");
+    }

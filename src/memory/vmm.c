@@ -483,3 +483,26 @@ void vmm_switch_address_space(uint64_t cr3) {
 
     __asm__ volatile("mov %0, %%cr3" : : "r"(cr3 & PAGE_MASK) : "memory");
 }
+
+int vmm_destroy_user_space(uint64_t cr3) {
+    if (cr3 == 0)
+        return -1;
+
+    vmm_switch_kernel_space();
+
+    uint64_t *pml4 = (uint64_t *)(uintptr_t)(cr3 & PAGE_MASK);
+
+    for (uint64_t va = 0x00400000ULL; va < 0x40000000ULL; va += PAGE_SIZE) {
+
+        uint64_t physical = get_physical_from(pml4, va);
+
+        if (physical != 0) {
+            uint64_t page = physical & PAGE_MASK;
+            pmm_free_page(page);
+        }
+    }
+
+    pmm_free_page((uint64_t)(uintptr_t)pml4);
+
+    return 0;
+}

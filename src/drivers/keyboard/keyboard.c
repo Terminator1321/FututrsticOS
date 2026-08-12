@@ -49,28 +49,34 @@ char keyboard_getchar(void) {
 static int shift = 0;
 static int caps = 0;
 
-// Called by isr_handler every time IRQ1 fires
-void keyboard_handler(void) {
+void keyboard_handler(void)
+{
     keyboard_irq_count++;
+
     uint8_t sc = inb(PS2_DATA);
 
+    volatile uint16_t *vga = (volatile uint16_t *)0xB8000;
+    vga[0] = 0x0F00 | 'K';
+
     if (sc & 0x80) {
-        // key release - only care about shift
         uint8_t released = sc & 0x7F;
+
         if (released == 0x2A || released == 0x36)
             shift = 0;
+
         return;
     }
 
-    // key press
     switch (sc) {
     case 0x2A:
     case 0x36:
         shift = 1;
-        return; // L/R shift
+        return;
+
     case 0x3A:
         caps = !caps;
-        return; // caps lock
+        return;
+
     default:
         break;
     }
@@ -79,10 +85,11 @@ void keyboard_handler(void) {
         return;
 
     char c;
-    int upper = shift ^ caps; // caps only affects letters; fine for now
+    int upper = shift ^ caps;
+
     c = upper ? sc_ascii_shift[sc] : sc_ascii[sc];
+
     if (c)
-        // buf_push(c);
         shell_input(c);
 }
 

@@ -40,9 +40,10 @@ void idt_init(void) {
     idtr.limit = sizeof(idt) - 1;
     idtr.base = (uint64_t)idt;
 
-    __asm__ volatile("lidt %0" : : "m"(idtr));
-}
+    __asm__ volatile("lidt %0" : : "m"(idtr) : "memory");
 
+    __asm__ volatile("sti");
+}
 // exception names
 static const char *exc_names[32] = {
     "Division Error",
@@ -111,8 +112,7 @@ static void term_puthex64(uint64_t v) {
 }
 
 // the one C handler called by all 256 stubs
-void isr_handler(interrupt_frame_t *frame)
-{
+void isr_handler(interrupt_frame_t *frame) {
     if (!frame)
         return;
 
@@ -150,11 +150,7 @@ void isr_handler(interrupt_frame_t *frame)
 
         terminal_print("\n!! CPU EXCEPTION #");
 
-        char digits[3] = {
-            (char)('0' + n / 10),
-            (char)('0' + n % 10),
-            '\0'
-        };
+        char digits[3] = {(char)('0' + n / 10), (char)('0' + n % 10), '\0'};
 
         terminal_print(digits);
         terminal_print("  ");
