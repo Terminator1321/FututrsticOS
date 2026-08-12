@@ -11,5 +11,5 @@ typedef struct {
 } riru_load_result_t;
 
 int riru_load(const void *file, size_t size, riru_load_result_t *result);
-
+uint64_t riru_get_user_cr3(void);
 int riru_load_file(const char *name, riru_load_result_t *result);

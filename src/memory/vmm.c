@@ -67,7 +67,7 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
         if (!pdpt)
             return -2;
 
-        pml4[pml4_index] = (uint64_t)(uintptr_t)pdpt | PAGE_PRESENT | PAGE_WRITABLE;
+        pml4[pml4_index] = (uint64_t)(uintptr_t)pdpt | PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
     } else {
         pdpt = physical_to_table(pml4[pml4_index]);
     }
@@ -78,7 +78,7 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
         if (!pd)
             return -3;
 
-        pdpt[pdpt_index] = (uint64_t)(uintptr_t)pd | PAGE_PRESENT | PAGE_WRITABLE;
+        pdpt[pdpt_index] = (uint64_t)(uintptr_t)pd | PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
     } else {
         pd = physical_to_table(pdpt[pdpt_index]);
     }
@@ -92,7 +92,7 @@ static int map_page_in(uint64_t *pml4, uint64_t virtual_address, uint64_t physic
         if (!pt)
             return -5;
 
-        pd[pd_index] = (uint64_t)(uintptr_t)pt | PAGE_PRESENT | PAGE_WRITABLE;
+        pd[pd_index] = (uint64_t)(uintptr_t)pt | PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
     } else {
         pt = physical_to_table(pd[pd_index]);
     }

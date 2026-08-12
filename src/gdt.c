@@ -77,11 +77,11 @@ static void gdt_set_tss(void) {
 }
 
 void gdt_init(void) {
-    gdt_set_entry(1, 0, 0xFFFFF, 0x9A, 0xC);
+    gdt_set_entry(1, 0, 0xFFFFF, 0x9A, 0xA);
 
     gdt_set_entry(2, 0, 0xFFFFF, 0x92, 0xC);
 
-    gdt_set_entry(3, 0, 0xFFFFF, 0xFA, 0xC);
+    gdt_set_entry(3, 0, 0xFFFFF, 0xFA, 0xA);
 
     gdt_set_entry(4, 0, 0xFFFFF, 0xF2, 0xC);
 
@@ -123,7 +123,6 @@ void gdt_init(void) {
                      :
                      :
                      : "rax", "memory");
-
 
     __asm__ volatile("mov $0x10, %%ax\n"
                      "mov %%ax, %%ds\n"

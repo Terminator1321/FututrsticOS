@@ -15,9 +15,8 @@
 #include "system/system.h"
 #include "terminal/shell.h"
 #include "terminal/terminal.h"
-
-static void print_hex64(uint64_t value)
-{
+#include "riru/user.h"
+static void print_hex64(uint64_t value) {
     const char *hex = "0123456789ABCDEF";
     char buffer[19];
 
@@ -33,8 +32,7 @@ static void print_hex64(uint64_t value)
     terminal_print(buffer);
 }
 
-static void print_uint64(uint64_t value)
-{
+static void print_uint64(uint64_t value) {
     char buffer[21];
     int i = 20;
 
@@ -52,8 +50,7 @@ static void print_uint64(uint64_t value)
     terminal_print(&buffer[i]);
 }
 
-void kmain(void *mb2_info)
-{
+void kmain(void *mb2_info) {
     if (fb_init(mb2_info) != 0) {
         for (;;)
             __asm__ volatile("hlt");
@@ -154,8 +151,7 @@ void kmain(void *mb2_info)
 
     riru_load_result_t result;
 
-    int riru_result =
-        riru_load_file("hello.riru", &result);
+    int riru_result = riru_load_file("hello.riru", &result);
 
     if (riru_result == 0) {
         terminal_print("RIRU LOAD OK\n");
@@ -166,19 +162,16 @@ void kmain(void *mb2_info)
         terminal_print("\nPages: ");
         print_uint64(result.pages);
 
-        terminal_print("\nImage base: ");
-        print_hex64(result.image_base);
-
-        terminal_print("\nImage end: ");
-        print_hex64(result.image_end);
-
         terminal_print("\n");
+
+        terminal_print("Entering Ring 3...\n");
+        fb_present();
+
+        riru_enter_user(result.entry, 0x000000003FFFF000ULL);
     } else {
         terminal_print("RIRU LOAD FAILED: ");
 
-        print_uint64(
-            (uint64_t)(-riru_result)
-        );
+        print_uint64((uint64_t)(-riru_result));
 
         terminal_print("\n");
     }
