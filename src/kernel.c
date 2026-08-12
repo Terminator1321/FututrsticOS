@@ -167,6 +167,8 @@ void kmain(void *mb2_info) {
         terminal_print("Entering Ring 3...\n");
         fb_present();
 
+        vmm_switch_address_space(riru_get_user_cr3());
+
         riru_enter_user(result.entry, 0x000000003FFFF000ULL);
     } else {
         terminal_print("RIRU LOAD FAILED: ");
