@@ -269,6 +269,22 @@ void vmm_prepare_kernel_space(void) {
             }
         }
     }
+    // idt.c's panic/debug path writes directly to the legacy VGA text buffer
+    // at 0xB8000. That address is outside [kernel_start,kernel_end) and
+    // outside the framebuffer range, so without this it stays unmapped in
+    // kernel_pml4 -> the very first write to it (e.g. from an exception, or
+    // the IRQ12 mouse debug marker) page-faults, and because the panic
+    // handler itself does the same faulting write, that turns into a
+    // double fault -> triple fault -> the machine resets.
+    int vga_result = map_page_in(kernel_pml4, 0xB8000, 0xB8000, PAGE_WRITABLE);
+
+    if (vga_result != 0) {
+        terminal_print("VMM: VGA mapping failed\n");
+
+        for (;;)
+            __asm__ volatile("hlt");
+    }
+
     kernel_cr3 = (uint64_t)(uintptr_t)kernel_pml4;
 
     terminal_print("Kernel address space prepared.\n");
