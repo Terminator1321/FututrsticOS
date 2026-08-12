@@ -9,7 +9,6 @@
 #include "system/system.h"
 
 #include "drivers/keyboard/keyboard.h"
-#include "drivers/timer/timer.h"
 #include "fs/fs.h"
 #include "gdt.h"
 #include "idt.h"
@@ -34,6 +33,7 @@ void kmain(void *mb2_info) {
     terminal_print("Kernel initialized.\n");
 
     memory_detect(mb2_info);
+
     pmm_init(mb2_info);
     kmalloc_init();
 
@@ -53,7 +53,6 @@ void kmain(void *mb2_info) {
 
     if (vmm_map_kernel_memory() != 0) {
         terminal_print("VMM: kernel memory mapping failed.\n");
-        fb_present();
 
         for (;;)
             __asm__ volatile("cli; hlt");
@@ -77,9 +76,7 @@ void kmain(void *mb2_info) {
 
     terminal_print("Keyboard initialized.\n");
 
-    timer_init(system_timer_hz);
-
-    terminal_print("Timer initialized.\n");
+    terminal_print("Timer disabled.\n");
 
     syscall_init();
 
@@ -89,7 +86,6 @@ void kmain(void *mb2_info) {
 
     if (fs_mount() == 0) {
         terminal_print("Filesystem mount failed.\n");
-        fb_present();
 
         for (;;)
             __asm__ volatile("cli; hlt");
@@ -99,7 +95,8 @@ void kmain(void *mb2_info) {
 
     shell_init();
 
-    fb_present();
+    terminal_print("Shell initialized.\n");
+    terminal_print("> ");
 
     __asm__ volatile("sti");
 

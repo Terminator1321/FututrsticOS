@@ -383,21 +383,38 @@ int vmm_map_kernel_range(uint64_t virtual_address, uint64_t physical_address, ui
 }
 
 int vmm_map_kernel_memory(void) {
-    uint64_t size = fb_buffer_size();
-
     uint64_t draw = fb_draw_buffer_address();
-
     uint64_t display = fb_display_buffer_address();
+
+    uint64_t fb_phys = fb_physical_address();
+    uint64_t fb_size = fb_memory_size();
+
+    uint64_t buffer_size = fb_buffer_size();
 
     if (!draw || !display)
         return -1;
 
-    int result = vmm_map_kernel_range(draw, draw, size, PAGE_WRITABLE);
+    if (!fb_phys || !fb_size)
+        return -2;
+
+    int result;
+
+    result = vmm_map_kernel_range(draw, draw, buffer_size, PAGE_WRITABLE);
 
     if (result != 0)
         return result;
 
-    return vmm_map_kernel_range(display, display, size, PAGE_WRITABLE);
+    result = vmm_map_kernel_range(display, display, buffer_size, PAGE_WRITABLE);
+
+    if (result != 0)
+        return result;
+
+    result = vmm_map_kernel_range(fb_phys, fb_phys, fb_size, PAGE_WRITABLE);
+
+    if (result != 0)
+        return result;
+
+    return 0;
 }
 
 uint64_t vmm_create_user_space(void) {
