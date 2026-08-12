@@ -4,10 +4,12 @@
 #include "drivers/timer/timer.h"
 #include "framebuffer.h"
 #include "pic.h"
+#include "syscalls.h"
 #include "terminal/terminal.h"
 #include <stdint.h>
 
 #define IDT_ENTRIES 256
+#define USER_INT_GATE 0xEE
 #define INT_GATE 0x8E // present | ring0 | 64-bit interrupt gate
 #define CODE_SEG 0x08 // our GDT64 code entry (second slot = offset 8)
 
@@ -32,6 +34,8 @@ void idt_init(void) {
 
     for (int i = 0; i < IDT_ENTRIES; i++)
         set_gate(i, isr_stubs[i]);
+
+    idt[0x80].type_attr = USER_INT_GATE;
 
     idtr.limit = sizeof(idt) - 1;
     idtr.base = (uint64_t)idt;
@@ -107,8 +111,14 @@ static void term_puthex64(uint64_t v) {
 }
 
 // the one C handler called by all 256 stubs
-void isr_handler(interrupt_frame_t *frame) {
+void isr_handler(interrupt_frame_t *frame)
+{
     uint64_t n = frame->int_num;
+
+    if (n == 0x80) {
+        syscall_handler(frame);
+        return;
+    }
 
     if (n < 32) {
         // CPU exception: print red panic line and halt.
