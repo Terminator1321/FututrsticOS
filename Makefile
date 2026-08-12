@@ -3,9 +3,13 @@ CC = gcc
 LD = ld
 
 CFLAGS = -ffreestanding -O2 -Wall -Wextra \
--mno-red-zone -mno-mmx -mno-sse -mno-sse2 -g
+         -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -g
 
 HOST_CFLAGS = -O2 -Wall -Wextra
+
+USER_CFLAGS = -m64 -O2 -ffreestanding -nostdlib \
+              -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+              -g
 
 LDFLAGS = -m elf_x86_64 -T linker.ld -nostdlib
 
@@ -52,7 +56,7 @@ $(NANOFS_IMAGE): $(SRC)/tools/nanofs_img.c
 
 test/hello.o: test/hello.c
 	@mkdir -p test
-	$(CC) -m64 -O2 -ffreestanding -nostdlib -c $< -o $@
+	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 test/hello.elf: test/hello.o
 	$(LD) -m elf_x86_64 -e main -o $@ $<
@@ -71,9 +75,9 @@ $(ISO): $(KERNEL) grub.cfg
 
 run: all
 	$(QEMU) \
-	-cdrom $(ISO) \
-	-drive file=$(DISK),format=raw,if=ide \
-	-m 512M
+		-cdrom $(ISO) \
+		-drive file=$(DISK),format=raw,if=ide \
+		-m 512M
 
 clean:
 	rm -rf $(BUILD)

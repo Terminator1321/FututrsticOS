@@ -113,55 +113,70 @@ static void term_puthex64(uint64_t v) {
 // the one C handler called by all 256 stubs
 void isr_handler(interrupt_frame_t *frame)
 {
+    if (!frame)
+        return;
+
     uint64_t n = frame->int_num;
 
     if (n == 0x80) {
+        terminal_print("\nSYSCALL 80\n");
+        fb_present();
+
         syscall_handler(frame);
+
+        terminal_print("SYSCALL RETURNED\n");
+        fb_present();
+
         return;
     }
 
     if (n < 32) {
-        // CPU exception: print red panic line and halt.
-        //
-        // This used to ONLY write to the legacy VGA text buffer at
-        // 0xB8000. That's invisible on this OS: the display is a linear
-        // framebuffer (see fb_present), not VGA text mode, so any
-        // exception after boot looked like a silent freeze instead of a
-        // visible panic. Print through the real terminal/framebuffer
-        // path too so crashes are actually diagnosable. Keep the VGA
-        // write as a harmless fallback for anyone running under a
-        // text-mode-only display.
         for (int i = 80; i < 160; i++)
-            vga[i] = 0x4F00 | ' '; // red background
+            vga[i] = 0x4F00 | ' ';
+
         vga_puts("EXCEPTION #", 80, 0x4F00);
-        // print 2-digit decimal number
+
         vga[91] = 0x4F00 | ('0' + n / 10);
         vga[92] = 0x4F00 | ('0' + n % 10);
+
         vga_puts("  ", 93, 0x4F00);
         vga_puts(exc_names[n], 95, 0x4F00);
+
         vga_puts("  ERR=", 120, 0x4F00);
         vga_puthex(frame->error_code, 126);
+
         vga_puts("  RIP=", 144, 0x4F00);
         vga_puthex(frame->rip, 150);
 
         terminal_print("\n!! CPU EXCEPTION #");
-        char digits[3] = {(char)('0' + n / 10), (char)('0' + n % 10), '\0'};
+
+        char digits[3] = {
+            (char)('0' + n / 10),
+            (char)('0' + n % 10),
+            '\0'
+        };
+
         terminal_print(digits);
         terminal_print("  ");
         terminal_print(exc_names[n]);
+
         terminal_print("\nERR=");
         term_puthex64(frame->error_code);
+
         terminal_print("  RIP=");
         term_puthex64(frame->rip);
+
         terminal_print("  CS=");
         term_puthex64(frame->cs);
+
         terminal_print("\n");
         fb_present();
 
         for (;;)
             __asm__ volatile("cli; hlt");
+    }
 
-    } else if (n >= 0x20 && n < 0x30) {
+    if (n >= 0x20 && n < 0x30) {
         uint8_t irq = (uint8_t)(n - 0x20);
 
         switch (irq) {
@@ -180,6 +195,6 @@ void isr_handler(interrupt_frame_t *frame)
         }
 
         pic_send_eoi(irq);
+        return;
     }
-    // vectors 48-255: spurious, ignore
 }
