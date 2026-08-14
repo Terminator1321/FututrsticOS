@@ -75,6 +75,14 @@ int process_exec(const char *name) {
     terminal_print("\n");
     fb_present();
 
+    // riru_load() leaves us on the KERNEL address space (it switches back
+    // after copying the image). The kernel's own identity map has this
+    // low-memory range as supervisor-only, so jumping to ring 3 without
+    // switching CR3 back to the user address space first causes an
+    // instant #PF(present, user) the moment the CPU fetches the first
+    // instruction at the entry point.
+    vmm_switch_address_space(cr3);
+
     riru_enter_user(result.entry, stack);
 
     return -6;
