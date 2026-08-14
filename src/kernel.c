@@ -9,6 +9,7 @@
 #include "system/system.h"
 
 #include "drivers/keyboard/keyboard.h"
+#include "drivers/timer/timer.h"
 #include "fs/fs.h"
 #include "gdt.h"
 #include "idt.h"
@@ -76,7 +77,9 @@ void kmain(void *mb2_info) {
 
     terminal_print("Keyboard initialized.\n");
 
-    terminal_print("Timer disabled.\n");
+    timer_init(100);
+
+    terminal_print("Timer initialized (100 Hz).\n");
 
     syscall_init();
 

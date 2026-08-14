@@ -4,6 +4,7 @@
 #include "drivers/timer/timer.h"
 #include "framebuffer.h"
 #include "pic.h"
+#include "process/process.h"
 #include "syscalls.h"
 #include "terminal/terminal.h"
 #include <stdint.h>
@@ -178,6 +179,7 @@ void isr_handler(interrupt_frame_t *frame) {
         switch (irq) {
         case 0:
             timer_handler();
+            scheduler_tick(frame);
             break;
 
         case 1:
