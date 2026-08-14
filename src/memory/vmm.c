@@ -27,6 +27,22 @@ static uint64_t *physical_to_table(uint64_t address) {
     return (uint64_t *)(uintptr_t)(address & PAGE_MASK);
 }
 
+static void vmm_print_hex(uint64_t value)
+{
+    const char hex[] = "0123456789ABCDEF";
+    char buffer[19];
+
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[18] = '\0';
+
+    for (int i = 0; i < 16; i++) {
+        buffer[17 - i] = hex[value & 0xF];
+        value >>= 4;
+    }
+
+    terminal_print(buffer);
+}
 static uint64_t *allocate_table(void) {
     uint64_t physical = pmm_alloc_page();
 
@@ -523,3 +539,69 @@ int vmm_destroy_user_space(uint64_t cr3) {
 
     return 0;
 }
+
+void vmm_debug_user_page(uint64_t cr3, uint64_t virtual_address)
+{
+    uint64_t *pml4 = (uint64_t *)(uintptr_t)(cr3 & PAGE_MASK);
+
+    uint64_t pml4_i = (virtual_address >> 39) & 0x1FF;
+    uint64_t pdpt_i = (virtual_address >> 30) & 0x1FF;
+    uint64_t pd_i   = (virtual_address >> 21) & 0x1FF;
+    uint64_t pt_i   = (virtual_address >> 12) & 0x1FF;
+
+    uint64_t pml4e = pml4[pml4_i];
+
+    terminal_print("VMM DEBUG USER PAGE\n");
+    terminal_print("PML4E=");
+    vmm_print_hex(pml4e);
+    terminal_print("\n");
+
+    if (!(pml4e & PAGE_PRESENT))
+        return;
+
+    uint64_t *pdpt = physical_to_table(pml4e);
+    uint64_t pdpte = pdpt[pdpt_i];
+
+    terminal_print("PDPTE=");
+    vmm_print_hex(pdpte);
+    terminal_print("\n");
+
+    if (!(pdpte & PAGE_PRESENT))
+        return;
+
+    uint64_t *pd = physical_to_table(pdpte);
+    uint64_t pde = pd[pd_i];
+
+    terminal_print("PDE=");
+    vmm_print_hex(pde);
+    terminal_print("\n");
+
+    if (!(pde & PAGE_PRESENT))
+        return;
+
+    if (pde & HUGE_PAGE) {
+        terminal_print("HUGE PAGE\n");
+        return;
+    }
+
+    uint64_t *pt = physical_to_table(pde);
+    uint64_t pte = pt[pt_i];
+
+    terminal_print("PTE=");
+    vmm_print_hex(pte);
+    terminal_print("\n");
+
+    terminal_print("FLAGS: ");
+
+    if (pte & PAGE_PRESENT)
+        terminal_print("P ");
+
+    if (pte & PAGE_WRITABLE)
+        terminal_print("W ");
+
+    if (pte & PAGE_USER)
+        terminal_print("U ");
+
+    terminal_print("\n");
+}
+

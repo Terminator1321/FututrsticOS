@@ -86,9 +86,18 @@ void kmain(void *mb2_info) {
 
     if (fs_mount() == 0) {
         terminal_print("Filesystem mount failed.\n");
+        terminal_print("(No valid NANOFS2 superblock found on disk 0 -\n");
+        terminal_print(" make sure disk.img is attached, e.g. via\n");
+        terminal_print(" 'qemu-system-x86_64 ... -drive file=disk.img,format=raw,if=ide'.)\n");
+
+        /* IDT/keyboard are already set up at this point, so it's safe to
+         * enable interrupts here instead of halting completely dark. This
+         * keeps the machine responsive (and the keyboard IRQ counter
+         * moving) instead of looking indistinguishably frozen. */
+        __asm__ volatile("sti");
 
         for (;;)
-            __asm__ volatile("cli; hlt");
+            __asm__ volatile("hlt");
     }
 
     terminal_print("Filesystem mounted.\n");

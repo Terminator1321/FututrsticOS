@@ -37,3 +37,4 @@ uint64_t vmm_get_physical_in(uint64_t cr3, uint64_t virtual_address);
 
 void vmm_switch_address_space(uint64_t cr3);
 int vmm_destroy_user_space(uint64_t cr3);
+void vmm_debug_user_page(uint64_t cr3, uint64_t virtual_address);

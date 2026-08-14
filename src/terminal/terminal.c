@@ -71,6 +71,7 @@ static void scroll_down(void) {
 void terminal_putchar(char c) {
     if (c == '\n') {
         scroll_down();
+        fb_present();
         return;
     }
 
@@ -81,6 +82,7 @@ void terminal_putchar(char c) {
             screen_buf[buf_row][buf_col] = 0;
 
             fb_fill_rect(buf_col * CHAR_W, (buf_row - scroll_top) * CHAR_H, CHAR_W, CHAR_H, COL_BG);
+            fb_present();
         }
 
         return;
@@ -94,6 +96,15 @@ void terminal_putchar(char c) {
     fb_draw_char(buf_col * CHAR_W, (buf_row - scroll_top) * CHAR_H, c, COL_TEXT, COL_BG);
 
     buf_col++;
+
+    /* fb_enable_backbuffer() means every draw above only touches the
+     * off-screen buffer. Nothing outside a handful of debug call sites
+     * (pmm.c/kmalloc.c/idt.c) ever blitted it to the screen, so boot
+     * text stopped updating right after those debug prints ended, and
+     * keystrokes (which land here via shell_input -> terminal_putchar)
+     * never appeared at all - it *looked* frozen even though the kernel
+     * kept running. Presenting after every visible change fixes that. */
+    fb_present();
 }
 
 void terminal_print(const char *s) {
@@ -113,6 +124,7 @@ void terminal_clear(void) {
     scroll_top = 0;
 
     fb_clear(COL_BG);
+    fb_present();
 }
 
 void terminal_hide_cursor(void) {
@@ -120,6 +132,7 @@ void terminal_hide_cursor(void) {
     int y = (buf_row - scroll_top) * CHAR_H;
 
     fb_fill_rect(x, y + CHAR_H - 2, CHAR_W, 2, COL_BG);
+    fb_present();
 }
 
 void terminal_draw_cursor(void) {
@@ -127,6 +140,7 @@ void terminal_draw_cursor(void) {
     int y = (buf_row - scroll_top) * CHAR_H;
 
     fb_fill_rect(x, y + CHAR_H - 2, CHAR_W, 2, COL_TEXT);
+    fb_present();
 }
 
 void terminal_tick(void) {

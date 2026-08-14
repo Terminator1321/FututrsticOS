@@ -268,6 +268,9 @@ int riru_load(const void *file, size_t size, riru_load_result_t *result) {
 
     vmm_switch_address_space(riru_user_cr3);
 
+    terminal_print("RIRU: checking 0x401000 mapping...\n");
+    vmm_debug_user_page(riru_user_cr3, 0x401000);
+
     if (header->code_size) {
         uint8_t *destination = (uint8_t *)(uintptr_t)header->code_vaddr;
 
