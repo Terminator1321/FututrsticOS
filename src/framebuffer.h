@@ -32,6 +32,11 @@ void    fb_draw_char(int x, int y, char ch, color_t fg, color_t bg);
 void    fb_draw_string(int x, int y, const char *s, color_t fg, color_t bg);
 void    fb_draw_int(int x, int y, int n, color_t fg, color_t bg);
 
+void    fb_draw_char_ex(int x, int y, char ch, color_t fg, color_t bg, int scale, int transparent);
+void    fb_draw_string_ex(int x, int y, const char *s, color_t fg, color_t bg, int scale, int transparent);
+void    fb_draw_int_ex(int x, int y, int n, color_t fg, color_t bg, int scale, int transparent);
+int     fb_text_width(const char *s, int scale);
+
 /* blit only the listed rectangles — call this instead of fb_present */
 void    fb_present_rects(fb_rect_t *rects, int count);
 void    fb_present(void);          // legacy full-screen blit

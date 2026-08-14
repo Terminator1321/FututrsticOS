@@ -6,37 +6,23 @@
 #include "../memory/pmm.h"
 #include "../process/process.h"
 #include "../system/clock.h"
+#include "../system/system.h"
 #include "../terminal/shell.h"
 #include "../terminal/terminal.h"
+#include "ui_layout.h"
 #include "window.h"
 
-#define TITLEBAR_H     24
-#define TASKBAR_H      24
-#define TOPBAR_H       34
-#define SIDEBAR_W     220
-#define PANEL_W       220
-#define PANEL_GAP      12
-#define CURSOR_W        8
-#define CURSOR_H        8
-#define BG_COLOR        RGB(20, 20, 20)
-#define CONTENT_MARGIN   8
-#define BTN_SIZE        16
-#define BTN_GAP          6
-#define MAX_WINDOWS      8
+#define CURSOR_W 8
+#define CURSOR_H 8
+#define MAX_WINDOWS 8
+#define MAX_NOTIFICATIONS 4
 
-#define ACCENT_BLUE     RGB(0, 100, 255)
-#define ACCENT_PURPLE   RGB(160, 60, 220)
-#define PANEL_BG        RGB(20, 15, 30)
-#define PANEL_BG2       RGB(15, 15, 20)
-#define TEXT_DIM        RGB(120, 120, 130)
-#define TEXT_BRIGHT     RGB(210, 210, 220)
+static int prev_left = 0;
+static int gui_dirty = 1;
 
-static int prev_left    = 0;
-static int gui_dirty    = 1;
-
-static int      prev_cursor_x = -1;
-static int      prev_cursor_y = -1;
-static color_t  cursor_bg[CURSOR_W * CURSOR_H];
+static int prev_cursor_x = -1;
+static int prev_cursor_y = -1;
+static color_t cursor_bg[CURSOR_W * CURSOR_H];
 
 static int first_draw = 1;
 static int last_clock_total = -1;
@@ -44,42 +30,88 @@ static int last_clock_total = -1;
 static const color_t *bg_pixels = 0;
 static int bg_width = 0;
 static int bg_height = 0;
-static color_t solid_bg_color = BG_COLOR;
+static color_t solid_bg_color = UI_BG_VOID;
+
+static int bg_scale_pm = 1000;
+static int bg_off_x = 0;
+static int bg_off_y = 0;
 
 static window_t windows[MAX_WINDOWS];
 static int window_count = 0;
 static window_t *terminal_window = 0;
 
+typedef struct {
+    char text[40];
+} notification_t;
+
+static notification_t notifications[MAX_NOTIFICATIONS];
+static int notification_count = 0;
+
+static int dock_hover = -1;
+static int quick_hover = -1;
+
 static const char *nav_items[] = {
-    "Terminal",
-    "Files",
-    "Browser",
-    "Settings",
-    "Apps",
-    "System Monitor",
-    "Music",
-    "Gallery"
+    "Terminal", "Files", "Browser", "Settings",
+    "Apps", "System Monitor", "Music", "Gallery"
 };
 #define NAV_ITEM_COUNT ((int)(sizeof(nav_items) / sizeof(nav_items[0])))
-#define NAV_ITEM_H 34
-#define NAV_START_Y 100
-
-#define STATUS_START_Y 400
-#define STATUS_ROW_H 40
-
-#define POWER_ROW_Y 545
-#define POWER_BTN_W 56
-#define POWER_BTN_H 40
 
 static const char *quick_access_items[] = {
-    "Documents", "Downloads", "Pictures",
-    "Videos", "Music", "Projects"
+    "Documents", "Downloads", "Pictures", "Videos", "Music", "Projects"
 };
-#define QUICK_ACCESS_COLS 2
-#define QUICK_ACCESS_ROWS 3
-#define QUICK_TILE_W 96
-#define QUICK_TILE_H 60
-#define QUICK_TILE_GAP 8
+#define QUICK_COLS 2
+#define QUICK_ROWS 3
+
+static const char *dock_items[] = {
+    "Terminal", "Files", "Browser", "Settings", "Apps", "Gallery"
+};
+#define DOCK_ITEM_COUNT ((int)(sizeof(dock_items) / sizeof(dock_items[0])))
+
+typedef struct {
+    fb_rect_t sidebar;
+    fb_rect_t clock;
+    fb_rect_t music;
+    fb_rect_t quick;
+    fb_rect_t notif;
+    fb_rect_t dock;
+    fb_rect_t wsw;
+} desktop_layout_t;
+
+static desktop_layout_t g_layout;
+
+static void recompute_layout(void) {
+    int fw = fb_width();
+    int fh = fb_height();
+    int gap = ui_scaled(14);
+
+    g_layout.sidebar.x = (fw * 10) / 1000;
+    g_layout.sidebar.y = (fh * 40) / 1000;
+    g_layout.sidebar.w = (fw * 150) / 1000;
+    g_layout.sidebar.h = fh - g_layout.sidebar.y - (fh * 50) / 1000;
+
+    g_layout.clock = ui_pm_right(30, 50, 210, 105);
+
+    g_layout.music = g_layout.clock;
+    g_layout.music.w = (fw * 230) / 1000;
+    g_layout.music.h = (fh * 165) / 1000;
+    g_layout.music.x = fw - ((fw * 30) / 1000) - g_layout.music.w;
+    g_layout.music.y = g_layout.clock.y + g_layout.clock.h + gap;
+
+    g_layout.quick = g_layout.music;
+    g_layout.quick.h = (fh * 220) / 1000;
+    g_layout.quick.y = g_layout.music.y + g_layout.music.h + gap;
+
+    g_layout.notif = g_layout.quick;
+    g_layout.notif.h = (fh * 150) / 1000;
+    g_layout.notif.y = g_layout.quick.y + g_layout.quick.h + gap;
+
+    int notif_bottom_limit = fh - (fh * 30) / 1000;
+    if (g_layout.notif.y + g_layout.notif.h > notif_bottom_limit)
+        g_layout.notif.y = notif_bottom_limit - g_layout.notif.h;
+
+    g_layout.dock = ui_pm_bottom_center(28, 400, 68);
+    g_layout.wsw = ui_pm_bottom(15, 28, 180, 46);
+}
 
 void gui_set_background(const color_t *pixels, int width, int height) {
     bg_pixels = pixels;
@@ -94,38 +126,56 @@ void gui_set_bg_color(color_t color) {
     gui_dirty = 1;
 }
 
-static void draw_background_full(void) {
-    if (bg_pixels && bg_width > 0 && bg_height > 0)
-        fb_draw_image(0, 0, bg_width, bg_height, bg_pixels);
-    else
-        fb_clear(solid_bg_color);
+static void recompute_wallpaper_fit(void) {
+    if (!bg_pixels || bg_width <= 0 || bg_height <= 0)
+        return;
+
+    int fw = fb_width();
+    int fh = fb_height();
+
+    int sx = (fw * 1000) / bg_width;
+    int sy = (fh * 1000) / bg_height;
+    bg_scale_pm = sx > sy ? sx : sy;
+
+    if (bg_scale_pm < 1)
+        bg_scale_pm = 1000;
+
+    int scaled_w = (bg_width * bg_scale_pm) / 1000;
+    int scaled_h = (bg_height * bg_scale_pm) / 1000;
+
+    bg_off_x = (fw - scaled_w) / 2;
+    bg_off_y = (fh - scaled_h) / 2;
 }
 
 static void draw_background_rect(int x, int y, int w, int h) {
-    if (bg_pixels && bg_width > 0 && bg_height > 0) {
-        if (x < 0) { w += x; x = 0; }
-        if (y < 0) { h += y; y = 0; }
-        if (x + w > bg_width)  w = bg_width  - x;
-        if (y + h > bg_height) h = bg_height - y;
+    if (w <= 0 || h <= 0)
+        return;
 
-        for (int dy = 0; dy < h; dy++) {
-            const color_t *row = bg_pixels + (uint32_t)(y + dy) * (uint32_t)bg_width + x;
-
-            for (int dx = 0; dx < w; dx++)
-                fb_put_pixel(x + dx, y + dy, row[dx]);
-        }
-    } else {
+    if (!bg_pixels || bg_width <= 0 || bg_height <= 0) {
         fb_fill_rect(x, y, w, h, solid_bg_color);
+        return;
+    }
+
+    for (int dy = 0; dy < h; dy++) {
+        int sy = ((y + dy - bg_off_y) * 1000) / bg_scale_pm;
+        if (sy < 0) sy = 0;
+        if (sy >= bg_height) sy = bg_height - 1;
+
+        const color_t *row = bg_pixels + (uint32_t)sy * (uint32_t)bg_width;
+
+        for (int dx = 0; dx < w; dx++) {
+            int sx = ((x + dx - bg_off_x) * 1000) / bg_scale_pm;
+            if (sx < 0) sx = 0;
+            if (sx >= bg_width) sx = bg_width - 1;
+
+            fb_put_pixel(x + dx, y + dy, row[sx]);
+        }
     }
 }
 
-static void fb_fill_circle(int cx, int cy, int r, color_t c) {
-    for (int dy = -r; dy <= r; dy++) {
-        for (int dx = -r; dx <= r; dx++) {
-            if (dx * dx + dy * dy <= r * r)
-                fb_put_pixel(cx + dx, cy + dy, c);
-        }
-    }
+static void draw_background_full(void) {
+    recompute_wallpaper_fit();
+    draw_background_rect(0, 0, fb_width(), fb_height());
 }
 
 static window_t *window_create(window_kind_t kind, const char *title, int x, int y, int w, int h) {
@@ -145,6 +195,8 @@ static window_t *window_create(window_kind_t kind, const char *title, int x, int
     win->used = 1;
     win->kind = kind;
     win->prev_visible = 0;
+    win->fading = 1;
+    win->fade_start_tick = timer_get_ticks();
 
     int i = 0;
     while (title[i] && i < 31) {
@@ -160,48 +212,95 @@ static int window_visible(window_t *w) {
     return w->used && !w->minimized && !w->closed;
 }
 
+static int titlebar_height(void) {
+    return ui_scaled(30);
+}
+
+static int window_btn_size(void) {
+    return ui_scaled(11);
+}
+
 static void button_rects(window_t *w, fb_rect_t *close_r, fb_rect_t *max_r, fb_rect_t *min_r) {
-    int y = w->y + (TITLEBAR_H - BTN_SIZE) / 2;
-    int x = w->x + w->width - BTN_SIZE - 8;
+    int th = titlebar_height();
+    int bs = window_btn_size();
+    int gap = ui_scaled(9);
+
+    int y = w->y + th / 2 - bs / 2;
+    int x = w->x + w->width - bs - ui_scaled(14);
 
     close_r->x = x;
     close_r->y = y;
-    close_r->w = BTN_SIZE;
-    close_r->h = BTN_SIZE;
+    close_r->w = bs;
+    close_r->h = bs;
 
-    x -= BTN_SIZE + BTN_GAP;
+    x -= bs + gap;
     max_r->x = x;
     max_r->y = y;
-    max_r->w = BTN_SIZE;
-    max_r->h = BTN_SIZE;
+    max_r->w = bs;
+    max_r->h = bs;
 
-    x -= BTN_SIZE + BTN_GAP;
+    x -= bs + gap;
     min_r->x = x;
     min_r->y = y;
-    min_r->w = BTN_SIZE;
-    min_r->h = BTN_SIZE;
+    min_r->w = bs;
+    min_r->h = bs;
 }
 
 static int point_in_rect(int px, int py, fb_rect_t r) {
     return px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h;
 }
 
+static int window_opacity_pm(window_t *w) {
+    if (!w->fading)
+        return 1000;
+
+    if (system_timer_hz == 0) {
+        w->fading = 0;
+        return 1000;
+    }
+
+    uint64_t now = timer_get_ticks();
+    uint64_t elapsed = now - w->fade_start_tick;
+    uint64_t duration = system_timer_hz / 4;
+
+    if (duration == 0)
+        duration = 1;
+
+    if (elapsed >= duration) {
+        w->fading = 0;
+        return 1000;
+    }
+
+    return (int)((elapsed * 1000) / duration);
+}
+
 static void draw_window(window_t *w) {
-    fb_fill_rect(w->x, w->y, w->width, w->height, RGB(40, 40, 40));
-    fb_fill_rect(w->x, w->y, w->width, TITLEBAR_H, ACCENT_BLUE);
-    fb_draw_string(w->x + 8, w->y + 8, w->title, RGB(255, 255, 255), ACCENT_BLUE);
+    int th = titlebar_height();
+    int radius = ui_scaled(14);
+    int opacity = window_opacity_pm(w);
+
+    int glass_alpha = (780 * opacity) / 1000;
+    ui_fill_rounded_glass(w->x, w->y, w->width, w->height, radius, UI_GLASS_TINT, glass_alpha);
+    ui_fill_glass(w->x + radius / 2, w->y, w->width - radius, ui_scaled(2), UI_NEON_PURPLE, opacity);
+    ui_draw_glow_border_alpha(w->x, w->y, w->width, w->height, radius, UI_NEON_PURPLE, opacity);
+
+    if (opacity < 700)
+        return;
+
+    int fs = ui_font_scale();
+    fb_draw_string_ex(w->x + ui_scaled(16), w->y + th / 2 - 4 * fs, w->title, UI_TEXT_WHITE, UI_BG_VOID, fs, 1);
 
     fb_rect_t close_r, max_r, min_r;
     button_rects(w, &close_r, &max_r, &min_r);
 
-    fb_fill_rect(min_r.x, min_r.y, min_r.w, min_r.h, RGB(230, 200, 60));
-    fb_draw_char(min_r.x + 4, min_r.y + 3, '_', RGB(0, 0, 0), RGB(230, 200, 60));
+    int br = min_r.w / 2;
+    ui_fill_circle(min_r.x + br, min_r.y + br, br, UI_WARN_AMBER);
 
-    fb_fill_rect(max_r.x, max_r.y, max_r.w, max_r.h, RGB(60, 180, 80));
-    fb_draw_char(max_r.x + 4, max_r.y + 3, w->maximized ? 'o' : '#', RGB(0, 0, 0), RGB(60, 180, 80));
+    br = max_r.w / 2;
+    ui_fill_circle(max_r.x + br, max_r.y + br, br, UI_OK_GREEN);
 
-    fb_fill_rect(close_r.x, close_r.y, close_r.w, close_r.h, RGB(220, 60, 60));
-    fb_draw_char(close_r.x + 4, close_r.y + 3, 'x', RGB(0, 0, 0), RGB(220, 60, 60));
+    br = close_r.w / 2;
+    ui_fill_circle(close_r.x + br, close_r.y + br, br, UI_DANGER_RED);
 }
 
 static void format_clock(char *buf, int h, int m, int s) {
@@ -216,89 +315,65 @@ static void format_clock(char *buf, int h, int m, int s) {
     buf[8] = '\0';
 }
 
-static const char *topbar_menu[] = { "Machine", "View", "System", "Tools", "Help" };
-#define TOPBAR_MENU_COUNT ((int)(sizeof(topbar_menu) / sizeof(topbar_menu[0])))
+static void draw_sidebar_header(fb_rect_t s) {
+    int pad = ui_scaled(16);
+    int r = ui_scaled(22);
+    int cx = s.x + pad + r;
+    int cy = s.y + pad + r;
 
-static void draw_topbar(void) {
-    fb_fill_rect(0, 0, fb_width(), TOPBAR_H, PANEL_BG2);
-    fb_fill_rect(0, TOPBAR_H - 2, fb_width(), 2, ACCENT_BLUE);
-    fb_draw_string(10, 13, "FuturisticOS", TEXT_BRIGHT, PANEL_BG2);
+    ui_fill_circle(cx, cy, r, UI_NEON_PURPLE);
 
-    int mx = 150;
-    for (int i = 0; i < TOPBAR_MENU_COUNT; i++) {
-        fb_draw_string(mx, 13, topbar_menu[i], TEXT_DIM, PANEL_BG2);
-        int len = 0;
-        while (topbar_menu[i][len])
-            len++;
-        mx += len * 8 + 20;
-    }
+    int fs = ui_font_scale();
+    fb_draw_char_ex(cx - 4 * fs, cy - 4 * fs, 'Q', UI_TEXT_WHITE, UI_BG_VOID, fs, 1);
 
-    int h, m, s;
-    clock_get(&h, &m, &s);
+    int tx = cx + r + ui_scaled(10);
+    fb_draw_string_ex(tx, s.y + pad, "QEMO OS", UI_TEXT_WHITE, UI_BG_VOID, fs, 1);
+    fb_draw_string(tx, s.y + pad + 8 * fs + ui_scaled(4), "v1.0.0", UI_TEXT_DIM, UI_BG_VOID);
 
-    char buf[9];
-    format_clock(buf, h, m, s);
-
-    int cw = 8 * 8;
-    int cx = fb_width() - cw - 16;
-
-    fb_fill_rect(cx - 8, 4, cw + 16, TOPBAR_H - 8, RGB(30, 20, 45));
-    fb_draw_string(cx, 13, buf, RGB(210, 180, 255), RGB(30, 20, 45));
-
-    int tray_x = cx - 8 - 8 - 3 * 32;
-    const char *tray_labels[] = { "D", "A", "N" };
-
-    for (int i = 0; i < 3; i++) {
-        int bx = tray_x + i * 32;
-        fb_fill_rect(bx, 6, 24, TOPBAR_H - 12, PANEL_BG);
-        fb_draw_char(bx + 8, 13, tray_labels[i][0], TEXT_DIM, PANEL_BG);
-    }
+    fb_fill_rect(s.x + pad, cy + r + ui_scaled(14), s.w - pad * 2, ui_scaled(1), UI_TEXT_DIM);
 }
 
-static void draw_sidebar_header(void) {
-    int cx = 16 + 22;
-    int cy = TOPBAR_H + 16 + 22;
-
-    fb_fill_circle(cx, cy, 22, RGB(90, 60, 200));
-    fb_draw_char(cx - 4, cy - 4, 'F', RGB(255, 255, 255), RGB(90, 60, 200));
-
-    fb_draw_string(76, TOPBAR_H + 22, "FuturisticOS", TEXT_BRIGHT, PANEL_BG2);
-    fb_draw_string(76, TOPBAR_H + 38, "v1.0.0", TEXT_DIM, PANEL_BG2);
-
-    fb_fill_rect(0, TOPBAR_H + 90, SIDEBAR_W, 2, RGB(40, 40, 50));
+static int nav_start_y(fb_rect_t s) {
+    return s.y + ui_scaled(90);
 }
 
-static void draw_sidebar_nav(void) {
-    int y0 = TOPBAR_H + NAV_START_Y;
+static int nav_item_h(void) {
+    return ui_scaled(36);
+}
+
+static void draw_sidebar_nav(fb_rect_t s) {
+    int y0 = nav_start_y(s);
+    int ih = nav_item_h();
+    int pad = ui_scaled(8);
 
     for (int i = 0; i < NAV_ITEM_COUNT; i++) {
-        int iy = y0 + i * NAV_ITEM_H;
+        int iy = y0 + i * ih;
         int active = (i == 0);
-        color_t bg = active ? ACCENT_BLUE : PANEL_BG2;
-        color_t fg = active ? RGB(255, 255, 255) : RGB(140, 140, 150);
 
         if (active)
-            fb_fill_rect(8, iy, SIDEBAR_W - 16, NAV_ITEM_H - 6, bg);
+            ui_fill_rounded_glass(s.x + pad, iy, s.w - pad * 2, ih - ui_scaled(6), ui_scaled(10), UI_NEON_PURPLE, 550);
 
-        fb_draw_string(20, iy + 8, nav_items[i], fg, bg);
+        color_t fg = active ? UI_TEXT_WHITE : UI_TEXT_LAVENDER;
+        fb_draw_string(s.x + pad + ui_scaled(12), iy + ih / 2 - 6, nav_items[i], fg, UI_BG_VOID);
     }
 
-    fb_fill_rect(0, y0 + NAV_ITEM_COUNT * NAV_ITEM_H + 8, SIDEBAR_W, 2, RGB(40, 40, 50));
+    int sep_y = y0 + NAV_ITEM_COUNT * ih + ui_scaled(6);
+    fb_fill_rect(s.x + pad, sep_y, s.w - pad * 2, ui_scaled(1), UI_TEXT_DIM);
 }
 
-static void draw_status_bar(int x, int y, int w, int percent, color_t fg) {
-    fb_fill_rect(x, y, w, 6, RGB(35, 35, 45));
-
-    int filled = (w * percent) / 100;
-    if (filled > w) filled = w;
-    if (filled > 0)
-        fb_fill_rect(x, y, filled, 6, fg);
+static int status_start_y(fb_rect_t s) {
+    return nav_start_y(s) + NAV_ITEM_COUNT * nav_item_h() + ui_scaled(24);
 }
 
-static void draw_sidebar_status(void) {
-    int y0 = TOPBAR_H + STATUS_START_Y;
+static int status_row_h(void) {
+    return ui_scaled(42);
+}
 
-    fb_draw_string(16, y0, "SYSTEM STATUS", TEXT_DIM, PANEL_BG2);
+static void draw_sidebar_status(fb_rect_t s) {
+    int y0 = status_start_y(s);
+    int pad = ui_scaled(16);
+
+    fb_draw_string(s.x + pad, y0, "SYSTEM STATUS", UI_TEXT_DIM, UI_BG_VOID);
 
     uint64_t total_ticks = timer_get_ticks();
     uint64_t busy_ticks = process_get_busy_ticks();
@@ -313,157 +388,307 @@ static void draw_sidebar_status(void) {
     fs_disk_stats(&used_sectors, &total_sectors);
     int disk_percent = total_sectors ? (int)(((uint64_t)used_sectors * 100) / total_sectors) : 0;
 
-    const char *labels[3]     = { "CPU Usage", "RAM Usage", "Storage" };
-    int         percents[3]   = { cpu_percent, ram_percent, disk_percent };
-    color_t     colors[3]     = { ACCENT_BLUE, RGB(60, 200, 140), RGB(230, 160, 60) };
+    const char *labels[3] = { "CPU Usage", "RAM Usage", "Storage" };
+    int percents[3] = { cpu_percent, ram_percent, disk_percent };
+    color_t colors[3] = { UI_ELECTRIC_BLUE, UI_OK_GREEN, UI_NEON_MAGENTA };
+
+    int rh = status_row_h();
 
     for (int i = 0; i < 3; i++) {
-        int ry = y0 + 20 + i * STATUS_ROW_H;
+        int ry = y0 + ui_scaled(22) + i * rh;
 
-        fb_draw_string(16, ry, labels[i], TEXT_BRIGHT, PANEL_BG2);
-        fb_draw_int(SIDEBAR_W - 48, ry, percents[i], TEXT_DIM, PANEL_BG2);
-        fb_draw_char(SIDEBAR_W - 24, ry, '%', TEXT_DIM, PANEL_BG2);
+        fb_draw_string(s.x + pad, ry, labels[i], UI_TEXT_LAVENDER, UI_BG_VOID);
+        fb_draw_int(s.x + s.w - pad - ui_scaled(32), ry, percents[i], UI_TEXT_DIM, UI_BG_VOID);
+        fb_draw_char(s.x + s.w - pad - ui_scaled(10), ry, '%', UI_TEXT_DIM, UI_BG_VOID);
 
-        draw_status_bar(16, ry + 16, SIDEBAR_W - 32, percents[i], colors[i]);
+        ui_draw_progress(s.x + pad, ry + ui_scaled(16), s.w - pad * 2, ui_scaled(6), percents[i], colors[i], RGB(35, 30, 50));
     }
-
-    fb_fill_rect(0, y0 + 20 + 3 * STATUS_ROW_H, SIDEBAR_W, 2, RGB(40, 40, 50));
 }
 
-static void power_button_rects(fb_rect_t *restart_r, fb_rect_t *lock_r, fb_rect_t *off_r) {
-    int y = TOPBAR_H + POWER_ROW_Y;
+static void power_button_rects(fb_rect_t s, fb_rect_t *restart_r, fb_rect_t *lock_r, fb_rect_t *off_r) {
+    int pad = ui_scaled(16);
+    int bw = (s.w - pad * 2 - ui_scaled(24)) / 3;
+    int bh = ui_scaled(36);
+    int y = s.y + s.h - bh - ui_scaled(14);
 
-    restart_r->x = 16;
+    restart_r->x = s.x + pad;
     restart_r->y = y;
-    restart_r->w = POWER_BTN_W;
-    restart_r->h = POWER_BTN_H;
+    restart_r->w = bw;
+    restart_r->h = bh;
 
-    lock_r->x = 16 + POWER_BTN_W + 14;
+    lock_r->x = restart_r->x + bw + ui_scaled(12);
     lock_r->y = y;
-    lock_r->w = POWER_BTN_W;
-    lock_r->h = POWER_BTN_H;
+    lock_r->w = bw;
+    lock_r->h = bh;
 
-    off_r->x = 16 + (POWER_BTN_W + 14) * 2;
+    off_r->x = lock_r->x + bw + ui_scaled(12);
     off_r->y = y;
-    off_r->w = POWER_BTN_W;
-    off_r->h = POWER_BTN_H;
+    off_r->w = bw;
+    off_r->h = bh;
 }
 
-static void draw_sidebar_power(void) {
+static void draw_sidebar_power(fb_rect_t s) {
     fb_rect_t restart_r, lock_r, off_r;
-    power_button_rects(&restart_r, &lock_r, &off_r);
+    power_button_rects(s, &restart_r, &lock_r, &off_r);
 
-    fb_draw_string(16, restart_r.y - 18, "POWER", TEXT_DIM, PANEL_BG2);
+    fb_draw_string(restart_r.x, restart_r.y - ui_scaled(18), "POWER", UI_TEXT_DIM, UI_BG_VOID);
 
-    fb_fill_rect(restart_r.x, restart_r.y, restart_r.w, restart_r.h, PANEL_BG);
-    fb_draw_char(restart_r.x + restart_r.w / 2 - 4, restart_r.y + restart_r.h / 2 - 4, 'R', TEXT_BRIGHT, PANEL_BG);
+    int radius = ui_scaled(8);
 
-    fb_fill_rect(lock_r.x, lock_r.y, lock_r.w, lock_r.h, PANEL_BG);
-    fb_draw_char(lock_r.x + lock_r.w / 2 - 4, lock_r.y + lock_r.h / 2 - 4, 'L', TEXT_DIM, PANEL_BG);
+    ui_fill_rounded_glass(restart_r.x, restart_r.y, restart_r.w, restart_r.h, radius, UI_GLASS_TINT, 700);
+    fb_draw_char(restart_r.x + restart_r.w / 2 - 4, restart_r.y + restart_r.h / 2 - 4, 'R', UI_TEXT_LAVENDER, UI_BG_VOID);
 
-    fb_fill_rect(off_r.x, off_r.y, off_r.w, off_r.h, PANEL_BG);
-    fb_draw_char(off_r.x + off_r.w / 2 - 4, off_r.y + off_r.h / 2 - 4, 'O', RGB(220, 80, 80), PANEL_BG);
+    ui_fill_rounded_glass(lock_r.x, lock_r.y, lock_r.w, lock_r.h, radius, UI_GLASS_TINT, 700);
+    fb_draw_char(lock_r.x + lock_r.w / 2 - 4, lock_r.y + lock_r.h / 2 - 4, 'L', UI_TEXT_LAVENDER, UI_BG_VOID);
+
+    ui_fill_rounded_glass(off_r.x, off_r.y, off_r.w, off_r.h, radius, UI_GLASS_TINT, 700);
+    fb_draw_char(off_r.x + off_r.w / 2 - 4, off_r.y + off_r.h / 2 - 4, 'O', UI_DANGER_RED, UI_BG_VOID);
 }
 
 static void draw_sidebar(void) {
-    int h = fb_height() - TOPBAR_H;
+    fb_rect_t s = g_layout.sidebar;
+    int radius = ui_scaled(18);
 
-    fb_fill_rect(0, TOPBAR_H, SIDEBAR_W, h, PANEL_BG2);
-    fb_fill_rect(SIDEBAR_W, TOPBAR_H, 2, h, ACCENT_BLUE);
+    ui_fill_rounded_glass(s.x, s.y, s.w, s.h, radius, UI_GLASS_TINT, 720);
+    ui_draw_glow_border(s.x, s.y, s.w, s.h, radius, UI_NEON_PURPLE);
 
-    draw_sidebar_header();
-    draw_sidebar_nav();
-    draw_sidebar_status();
-    draw_sidebar_power();
+    draw_sidebar_header(s);
+    draw_sidebar_nav(s);
+    draw_sidebar_status(s);
+    draw_sidebar_power(s);
 }
 
-static void draw_now_playing(int x, int y, int w, int h) {
-    fb_fill_rect(x, y, w, h, PANEL_BG);
-    fb_fill_rect(x, y, w, 2, ACCENT_PURPLE);
-    fb_draw_string(x + 10, y + 10, "NOW PLAYING", RGB(190, 150, 230), PANEL_BG);
-    fb_draw_string(x + 10, y + 40, "Nothing playing", TEXT_DIM, PANEL_BG);
+static void draw_panel_frame(fb_rect_t r, const char *title) {
+    int radius = ui_scaled(16);
+
+    ui_fill_rounded_glass(r.x, r.y, r.w, r.h, radius, UI_GLASS_TINT, 740);
+    ui_draw_top_accent(r.x + radius / 2, r.y, r.w - radius, UI_NEON_MAGENTA, ui_scaled(2));
+    ui_draw_glow_border(r.x, r.y, r.w, r.h, radius, UI_NEON_MAGENTA);
+
+    fb_draw_string(r.x + ui_scaled(14), r.y + ui_scaled(14), title, UI_TEXT_LAVENDER, UI_BG_VOID);
 }
 
-static void draw_quick_access(int x, int y, int w, int h) {
-    fb_fill_rect(x, y, w, h, PANEL_BG);
-    fb_fill_rect(x, y, w, 2, ACCENT_PURPLE);
-    fb_draw_string(x + 10, y + 10, "QUICK ACCESS", RGB(190, 150, 230), PANEL_BG);
+static void draw_clock_widget(void) {
+    fb_rect_t r = g_layout.clock;
+    int fs = ui_font_scale() + 1;
 
-    int gx0 = x + 10;
-    int gy0 = y + 30;
+    int h, m, s;
+    clock_get(&h, &m, &s);
 
-    for (int i = 0; i < QUICK_ACCESS_ROWS * QUICK_ACCESS_COLS; i++) {
-        int col = i % QUICK_ACCESS_COLS;
-        int row = i / QUICK_ACCESS_COLS;
-        int tx = gx0 + col * (QUICK_TILE_W + QUICK_TILE_GAP);
-        int ty = gy0 + row * (QUICK_TILE_H + QUICK_TILE_GAP);
+    char hm[6];
+    hm[0] = '0' + (h / 10);
+    hm[1] = '0' + (h % 10);
+    hm[2] = ':';
+    hm[3] = '0' + (m / 10);
+    hm[4] = '0' + (m % 10);
+    hm[5] = '\0';
 
-        fb_fill_rect(tx, ty, QUICK_TILE_W, QUICK_TILE_H, PANEL_BG2);
-        fb_draw_string(tx + 8, ty + QUICK_TILE_H - 18, quick_access_items[i], TEXT_DIM, PANEL_BG2);
+    char sec[3];
+    sec[0] = '0' + (s / 10);
+    sec[1] = '0' + (s % 10);
+    sec[2] = '\0';
+
+    int radius = ui_scaled(18);
+    ui_fill_rounded_glass(r.x, r.y, r.w, r.h, radius, UI_GLASS_TINT, 740);
+    ui_draw_glow_border(r.x, r.y, r.w, r.h, radius, UI_ELECTRIC_BLUE);
+
+    int pad = ui_scaled(16);
+    fb_draw_string_ex(r.x + pad, r.y + pad, hm, UI_TEXT_WHITE, UI_BG_VOID, fs, 1);
+
+    int sx = r.x + pad + fb_text_width(hm, fs) + ui_scaled(6);
+    fb_draw_string_ex(sx, r.y + pad, sec, UI_TEXT_DIM, UI_BG_VOID, ui_font_scale(), 1);
+
+    char datebuf[16];
+    format_clock(datebuf, h, m, s);
+    fb_draw_string(r.x + pad, r.y + r.h - ui_scaled(22), "SYSTEM TIME", UI_TEXT_DIM, UI_BG_VOID);
+}
+
+static void draw_music_widget(void) {
+    fb_rect_t r = g_layout.music;
+    draw_panel_frame(r, "NOW PLAYING");
+
+    int pad = ui_scaled(14);
+    int art = ui_scaled(48);
+    int ay = r.y + ui_scaled(38);
+
+    ui_fill_rounded_glass(r.x + pad, ay, art, art, ui_scaled(8), RGB(40, 20, 60), 900);
+    fb_draw_string(r.x + pad + art + ui_scaled(10), ay + ui_scaled(6), "No media", UI_TEXT_LAVENDER, UI_BG_VOID);
+    fb_draw_string(r.x + pad + art + ui_scaled(10), ay + ui_scaled(20), "playing", UI_TEXT_DIM, UI_BG_VOID);
+
+    int by = ay + art + ui_scaled(14);
+    ui_draw_progress(r.x + pad, by, r.w - pad * 2, ui_scaled(4), 0, UI_NEON_PURPLE, RGB(35, 30, 50));
+
+    fb_draw_string(r.x + pad, by + ui_scaled(10), "--:--", UI_TEXT_DIM, UI_BG_VOID);
+    fb_draw_string(r.x + r.w - pad - ui_scaled(40), by + ui_scaled(10), "--:--", UI_TEXT_DIM, UI_BG_VOID);
+
+    int cy = by + ui_scaled(30);
+    int cx = r.x + r.w / 2;
+    int cr = ui_scaled(12);
+
+    ui_fill_circle(cx - ui_scaled(36), cy, ui_scaled(8), UI_TEXT_DIM);
+    ui_fill_circle(cx, cy, cr, UI_NEON_PURPLE);
+    fb_draw_char(cx - 3, cy - 4, '>', UI_TEXT_WHITE, UI_NEON_PURPLE);
+    ui_fill_circle(cx + ui_scaled(36), cy, ui_scaled(8), UI_TEXT_DIM);
+}
+
+static void quick_tile_rect(fb_rect_t r, int index, fb_rect_t *out) {
+    int pad = ui_scaled(14);
+    int gap = ui_scaled(8);
+    int gx0 = r.x + pad;
+    int gy0 = r.y + ui_scaled(38);
+
+    int tile_w = (r.w - pad * 2 - gap * (QUICK_COLS - 1)) / QUICK_COLS;
+    int tile_h = (r.h - ui_scaled(38) - pad - gap * (QUICK_ROWS - 1)) / QUICK_ROWS;
+
+    int col = index % QUICK_COLS;
+    int row = index / QUICK_COLS;
+
+    out->x = gx0 + col * (tile_w + gap);
+    out->y = gy0 + row * (tile_h + gap);
+    out->w = tile_w;
+    out->h = tile_h;
+}
+
+static void draw_quick_access(void) {
+    fb_rect_t r = g_layout.quick;
+    draw_panel_frame(r, "QUICK ACCESS");
+
+    for (int i = 0; i < QUICK_ROWS * QUICK_COLS; i++) {
+        fb_rect_t tile;
+        quick_tile_rect(r, i, &tile);
+
+        int hovered = (i == quick_hover);
+        color_t fill = hovered ? RGB(55, 30, 85) : RGB(30, 20, 45);
+        int fill_alpha = hovered ? 880 : 780;
+        color_t border = hovered ? UI_NEON_MAGENTA : ui_blend(UI_BG_VOID, UI_NEON_PURPLE, 500);
+
+        ui_fill_rounded_glass(tile.x, tile.y, tile.w, tile.h, ui_scaled(10), fill, fill_alpha);
+
+        if (hovered)
+            ui_draw_glow_border(tile.x, tile.y, tile.w, tile.h, ui_scaled(10), border);
+        else
+            ui_draw_rounded_border(tile.x, tile.y, tile.w, tile.h, ui_scaled(10), border);
+
+        color_t label = hovered ? UI_TEXT_WHITE : UI_TEXT_LAVENDER;
+        fb_draw_string(tile.x + ui_scaled(8), tile.y + tile.h - ui_scaled(18), quick_access_items[i], label, UI_BG_VOID);
     }
 }
 
-static void draw_notifications(int x, int y, int w, int h) {
-    fb_fill_rect(x, y, w, h, PANEL_BG);
-    fb_fill_rect(x, y, w, 2, ACCENT_PURPLE);
-    fb_draw_string(x + 10, y + 10, "NOTIFICATIONS", RGB(190, 150, 230), PANEL_BG);
+static void draw_notifications(void) {
+    fb_rect_t r = g_layout.notif;
+    draw_panel_frame(r, "NOTIFICATIONS");
 
-    fb_fill_circle(x + 16, y + 42, 4, RGB(60, 200, 140));
-    fb_draw_string(x + 28, y + 38, "System ready", TEXT_BRIGHT, PANEL_BG);
+    int pad = ui_scaled(14);
+    int y = r.y + ui_scaled(38);
+
+    if (notification_count == 0) {
+        fb_draw_string(r.x + pad, y, "No new notifications", UI_TEXT_DIM, UI_BG_VOID);
+        return;
+    }
+
+    for (int i = 0; i < notification_count && i < MAX_NOTIFICATIONS; i++) {
+        ui_fill_circle(r.x + pad + ui_scaled(4), y + ui_scaled(6), ui_scaled(4), UI_OK_GREEN);
+        fb_draw_string(r.x + pad + ui_scaled(16), y, notifications[i].text, UI_TEXT_WHITE, UI_BG_VOID);
+        y += ui_scaled(22);
+    }
 }
 
-static int panel_layout(int *now_h, int *quick_h, int *notif_h) {
-    *now_h = 90;
-    *quick_h = 30 + QUICK_ACCESS_ROWS * QUICK_TILE_H + (QUICK_ACCESS_ROWS - 1) * QUICK_TILE_GAP + 10;
-    *notif_h = 70;
-    return *now_h + *quick_h + *notif_h + PANEL_GAP * 3;
+void gui_notify(const char *text) {
+    if (notification_count < MAX_NOTIFICATIONS) {
+        int i = 0;
+        while (text[i] && i < 39) {
+            notifications[notification_count].text[i] = text[i];
+            i++;
+        }
+        notifications[notification_count].text[i] = '\0';
+        notification_count++;
+    }
+    gui_dirty = 1;
 }
 
-static void draw_side_panels(void) {
-    int x = fb_width() - PANEL_W - PANEL_GAP;
-    int y = TOPBAR_H + PANEL_GAP;
+static void dock_item_rect(fb_rect_t dock, int index, fb_rect_t *out) {
+    int pad = ui_scaled(10);
+    int gap = ui_scaled(6);
+    int size = dock.h - pad * 2;
+    int total_w = DOCK_ITEM_COUNT * size + (DOCK_ITEM_COUNT - 1) * gap;
+    int x0 = dock.x + (dock.w - total_w) / 2;
 
-    int now_h, quick_h, notif_h;
-    panel_layout(&now_h, &quick_h, &notif_h);
-
-    draw_now_playing(x, y, PANEL_W, now_h);
-    y += now_h + PANEL_GAP;
-
-    draw_quick_access(x, y, PANEL_W, quick_h);
-    y += quick_h + PANEL_GAP;
-
-    draw_notifications(x, y, PANEL_W, notif_h);
+    out->x = x0 + index * (size + gap);
+    out->y = dock.y + pad;
+    out->w = size;
+    out->h = size;
 }
 
-static void draw_taskbar(void) {
-    int y = fb_height() - TASKBAR_H;
+static void draw_dock(void) {
+    fb_rect_t d = g_layout.dock;
+    int radius = d.h / 2;
 
-    fb_fill_rect(0, y, fb_width(), TASKBAR_H, PANEL_BG2);
-    fb_fill_rect(0, y, fb_width(), 2, ACCENT_BLUE);
+    ui_fill_rounded_glass(d.x, d.y, d.w, d.h, radius, UI_GLASS_TINT, 780);
+    ui_draw_glow_border(d.x, d.y, d.w, d.h, radius, UI_NEON_MAGENTA);
 
-    int tx = fb_width() - 10;
+    for (int i = 0; i < DOCK_ITEM_COUNT; i++) {
+        fb_rect_t item;
+        dock_item_rect(d, i, &item);
 
-    for (int i = 0; i < window_count; i++) {
-        window_t *w = &windows[i];
+        int hovered = (i == dock_hover);
 
-        if (!w->used || window_visible(w))
-            continue;
+        if (hovered) {
+            int grow = ui_scaled(3);
+            item.x -= grow;
+            item.y -= grow;
+            item.w += grow * 2;
+            item.h += grow * 2;
+        }
 
-        int len = 0;
-        while (w->title[len])
-            len++;
+        color_t fill = hovered ? RGB(70, 35, 105) : RGB(35, 20, 55);
+        int fill_alpha = hovered ? 900 : 800;
 
-        tx -= len * 8;
-        fb_draw_string(tx, y + 8, w->title, TEXT_DIM, PANEL_BG2);
-        tx -= 20;
+        ui_fill_rounded_glass(item.x, item.y, item.w, item.h, ui_scaled(10), fill, fill_alpha);
+
+        if (hovered)
+            ui_draw_glow_border(item.x, item.y, item.w, item.h, ui_scaled(10), UI_NEON_MAGENTA);
+
+        color_t glyph = hovered ? UI_TEXT_WHITE : UI_TEXT_LAVENDER;
+        fb_draw_char(item.x + item.w / 2 - 4, item.y + item.h / 2 - 4, dock_items[i][0], glyph, UI_BG_VOID);
+    }
+}
+
+static void draw_workspace_switcher(void) {
+    fb_rect_t w = g_layout.wsw;
+    int radius = w.h / 2;
+
+    ui_fill_rounded_glass(w.x, w.y, w.w, w.h, radius, UI_GLASS_TINT, 780);
+    ui_draw_glow_border(w.x, w.y, w.w, w.h, radius, UI_NEON_PURPLE);
+
+    int count = 5;
+    int pad = ui_scaled(6);
+    int gap = ui_scaled(4);
+    int size = w.h - pad * 2;
+    int x = w.x + pad;
+
+    for (int i = 0; i < count; i++) {
+        int active = (i == 0);
+        color_t fill = active ? UI_NEON_PURPLE : RGB(30, 25, 45);
+
+        ui_fill_rounded_glass(x, w.y + pad, size, size, ui_scaled(6), fill, active ? 950 : 700);
+
+        if (i < 4)
+            fb_draw_char(x + size / 2 - 4, w.y + pad + size / 2 - 4, '1' + i, UI_TEXT_WHITE, UI_BG_VOID);
+        else
+            fb_draw_char(x + size / 2 - 4, w.y + pad + size / 2 - 4, '+', UI_TEXT_WHITE, UI_BG_VOID);
+
+        x += size + gap;
     }
 }
 
 static void terminal_content_rect(window_t *w, int *x, int *y, int *cw, int *ch) {
-    *x = w->x + CONTENT_MARGIN;
-    *y = w->y + TITLEBAR_H + CONTENT_MARGIN;
-    *cw = w->width - CONTENT_MARGIN * 2;
-    *ch = w->height - TITLEBAR_H - CONTENT_MARGIN * 2;
+    int margin = ui_scaled(10);
+    int th = titlebar_height();
+
+    *x = w->x + margin;
+    *y = w->y + th + margin;
+    *cw = w->width - margin * 2;
+    *ch = w->height - th - margin * 2;
 }
 
 static void toggle_maximize(window_t *w) {
@@ -479,24 +704,63 @@ static void toggle_maximize(window_t *w) {
         w->restore_w = w->width;
         w->restore_h = w->height;
 
-        w->x = SIDEBAR_W;
-        w->y = TOPBAR_H;
-        w->width = fb_width() - SIDEBAR_W - PANEL_W - PANEL_GAP * 2;
-        w->height = fb_height() - TOPBAR_H - TASKBAR_H;
+        int gap = ui_scaled(14);
+
+        w->x = g_layout.sidebar.x + g_layout.sidebar.w + gap;
+        w->y = gap;
+        w->width = fb_width() - w->x - ui_scaled(230) - gap;
+        w->height = g_layout.dock.y - gap * 2;
         w->maximized = 1;
     }
 }
 
 static int sidebar_nav_hit_test(int mx, int my) {
-    int y0 = TOPBAR_H + NAV_START_Y;
+    fb_rect_t s = g_layout.sidebar;
 
-    if (mx < 8 || mx >= SIDEBAR_W - 8)
+    if (mx < s.x || mx >= s.x + s.w)
         return -1;
 
-    for (int i = 0; i < NAV_ITEM_COUNT; i++) {
-        int iy = y0 + i * NAV_ITEM_H;
+    int y0 = nav_start_y(s);
+    int ih = nav_item_h();
 
-        if (my >= iy && my < iy + NAV_ITEM_H - 6)
+    for (int i = 0; i < NAV_ITEM_COUNT; i++) {
+        int iy = y0 + i * ih;
+
+        if (my >= iy && my < iy + ih - ui_scaled(6))
+            return i;
+    }
+
+    return -1;
+}
+
+static int dock_hit_test(int mx, int my) {
+    fb_rect_t d = g_layout.dock;
+
+    if (!point_in_rect(mx, my, d))
+        return -1;
+
+    for (int i = 0; i < DOCK_ITEM_COUNT; i++) {
+        fb_rect_t item;
+        dock_item_rect(d, i, &item);
+
+        if (point_in_rect(mx, my, item))
+            return i;
+    }
+
+    return -1;
+}
+
+static int quick_hit_test(int mx, int my) {
+    fb_rect_t r = g_layout.quick;
+
+    if (!point_in_rect(mx, my, r))
+        return -1;
+
+    for (int i = 0; i < QUICK_ROWS * QUICK_COLS; i++) {
+        fb_rect_t tile;
+        quick_tile_rect(r, i, &tile);
+
+        if (point_in_rect(mx, my, tile))
             return i;
     }
 
@@ -509,14 +773,31 @@ void gui_restore_terminal(void) {
 
     terminal_window->minimized = 0;
     terminal_window->closed = 0;
+    terminal_window->fading = 1;
+    terminal_window->fade_start_tick = timer_get_ticks();
     gui_dirty = 1;
+}
+
+static fb_rect_t sidebar_dirty_rect(void) {
+    fb_rect_t s = g_layout.sidebar;
+    fb_rect_t r = { s.x - 2, 0, s.w + 4, fb_height() };
+    return r;
+}
+
+static fb_rect_t right_column_dirty_rect(void) {
+    int right_edge = fb_width();
+    int left_edge = g_layout.clock.x - ui_scaled(10);
+    fb_rect_t r = { left_edge, 0, right_edge - left_edge, fb_height() };
+    return r;
 }
 
 void gui_draw(void) {
     mouse_state_t mouse = mouse_get_state();
 
-    fb_rect_t dirty[MAX_WINDOWS * 2 + 8];
-    int       ndirty = 0;
+    fb_rect_t dirty[MAX_WINDOWS * 2 + 12];
+    int ndirty = 0;
+
+    recompute_layout();
 
     if (gui_dirty) {
         gui_dirty = 0;
@@ -524,10 +805,13 @@ void gui_draw(void) {
         if (first_draw) {
             first_draw = 0;
             draw_background_full();
-            draw_topbar();
             draw_sidebar();
-            draw_side_panels();
-            draw_taskbar();
+            draw_clock_widget();
+            draw_music_widget();
+            draw_quick_access();
+            draw_notifications();
+            draw_dock();
+            draw_workspace_switcher();
 
             for (int i = 0; i < window_count; i++) {
                 window_t *w = &windows[i];
@@ -561,20 +845,20 @@ void gui_draw(void) {
                 }
             }
 
-            draw_topbar();
-            dirty[ndirty++] = (fb_rect_t){ 0, 0, fb_width(), TOPBAR_H };
-
             draw_sidebar();
-            dirty[ndirty++] = (fb_rect_t){ 0, TOPBAR_H, SIDEBAR_W + 2, fb_height() - TOPBAR_H };
+            dirty[ndirty++] = sidebar_dirty_rect();
 
-            draw_side_panels();
+            draw_clock_widget();
+            draw_music_widget();
+            draw_quick_access();
+            draw_notifications();
+            dirty[ndirty++] = right_column_dirty_rect();
 
-            int now_h, quick_h, notif_h;
-            int total_h = panel_layout(&now_h, &quick_h, &notif_h);
-            dirty[ndirty++] = (fb_rect_t){ fb_width() - PANEL_W - PANEL_GAP, TOPBAR_H, PANEL_W + PANEL_GAP, total_h + PANEL_GAP };
+            draw_dock();
+            dirty[ndirty++] = (fb_rect_t){ g_layout.dock.x - 2, g_layout.dock.y - 2, g_layout.dock.w + 4, g_layout.dock.h + 4 };
 
-            draw_taskbar();
-            dirty[ndirty++] = (fb_rect_t){ 0, fb_height() - TASKBAR_H, fb_width(), TASKBAR_H };
+            draw_workspace_switcher();
+            dirty[ndirty++] = (fb_rect_t){ g_layout.wsw.x - 2, g_layout.wsw.y - 2, g_layout.wsw.w + 4, g_layout.wsw.h + 4 };
 
             for (int i = 0; i < window_count; i++) {
                 window_t *w = &windows[i];
@@ -609,19 +893,16 @@ void gui_draw(void) {
     if (prev_cursor_x >= 0) {
         for (int dy = 0; dy < CURSOR_H; dy++)
             for (int dx = 0; dx < CURSOR_W; dx++)
-                fb_put_pixel(prev_cursor_x + dx, prev_cursor_y + dy,
-                             cursor_bg[dy * CURSOR_W + dx]);
-        dirty[ndirty++] = (fb_rect_t){
-            prev_cursor_x, prev_cursor_y, CURSOR_W, CURSOR_H
-        };
+                fb_put_pixel(prev_cursor_x + dx, prev_cursor_y + dy, cursor_bg[dy * CURSOR_W + dx]);
+
+        dirty[ndirty++] = (fb_rect_t){ prev_cursor_x, prev_cursor_y, CURSOR_W, CURSOR_H };
     }
 
     for (int dy = 0; dy < CURSOR_H; dy++)
         for (int dx = 0; dx < CURSOR_W; dx++)
-            cursor_bg[dy * CURSOR_W + dx] =
-                fb_get_pixel(mouse.x + dx, mouse.y + dy);
+            cursor_bg[dy * CURSOR_W + dx] = fb_get_pixel(mouse.x + dx, mouse.y + dy);
 
-    fb_fill_rect(mouse.x, mouse.y, CURSOR_W, CURSOR_H, RGB(255,255,255));
+    fb_fill_rect(mouse.x, mouse.y, CURSOR_W, CURSOR_H, RGB(255, 255, 255));
     dirty[ndirty++] = (fb_rect_t){ mouse.x, mouse.y, CURSOR_W, CURSOR_H };
 
     prev_cursor_x = mouse.x;
@@ -631,6 +912,8 @@ void gui_draw(void) {
 }
 
 void gui_update(void) {
+    recompute_layout();
+
     mouse_state_t mouse = mouse_get_state();
     int clicked = !prev_left && mouse.left;
 
@@ -643,14 +926,36 @@ void gui_update(void) {
         gui_dirty = 1;
     }
 
+    int new_dock_hover = dock_hit_test(mouse.x, mouse.y);
+    if (new_dock_hover != dock_hover) {
+        dock_hover = new_dock_hover;
+        gui_dirty = 1;
+    }
+
+    int new_quick_hover = quick_hit_test(mouse.x, mouse.y);
+    if (new_quick_hover != quick_hover) {
+        quick_hover = new_quick_hover;
+        gui_dirty = 1;
+    }
+
+    for (int i = 0; i < window_count; i++) {
+        if (windows[i].fading)
+            gui_dirty = 1;
+    }
+
     if (clicked) {
         int hit = sidebar_nav_hit_test(mouse.x, mouse.y);
 
         if (hit == 0)
             gui_restore_terminal();
 
+        int dock_hit = dock_hit_test(mouse.x, mouse.y);
+
+        if (dock_hit == 0)
+            gui_restore_terminal();
+
         fb_rect_t restart_r, lock_r, off_r;
-        power_button_rects(&restart_r, &lock_r, &off_r);
+        power_button_rects(g_layout.sidebar, &restart_r, &lock_r, &off_r);
 
         if (point_in_rect(mouse.x, mouse.y, restart_r))
             reboot_system();
@@ -680,14 +985,15 @@ void gui_update(void) {
             w->dragging = 0;
             gui_dirty = 1;
         } else {
+            int th = titlebar_height();
             int inside_titlebar =
                 mouse.x >= w->x &&
-                mouse.x <  w->x + w->width &&
+                mouse.x < w->x + w->width &&
                 mouse.y >= w->y &&
-                mouse.y <  w->y + TITLEBAR_H;
+                mouse.y < w->y + th;
 
             if (clicked && inside_titlebar && !w->maximized) {
-                w->dragging      = 1;
+                w->dragging = 1;
                 w->drag_offset_x = mouse.x - w->x;
                 w->drag_offset_y = mouse.y - w->y;
             }
@@ -722,8 +1028,18 @@ void gui_update(void) {
 
 void gui_init(void) {
     clock_init();
-    terminal_window = window_create(WINDOW_KIND_TERMINAL, "Terminal",
-                                     SIDEBAR_W + 40, TOPBAR_H + 20, 500, 300);
+    recompute_layout();
+
+    int fw = fb_width();
+    int fh = fb_height();
+
+    int tx = (fw * 175) / 1000;
+    int ty = (fh * 60) / 1000;
+    int tw = (fw * 290) / 1000;
+    int th = (fh * 340) / 1000;
+
+    terminal_window = window_create(WINDOW_KIND_TERMINAL, "Terminal", tx, ty, tw, th);
+    gui_notify("System Ready");
     gui_dirty = 1;
 }
 

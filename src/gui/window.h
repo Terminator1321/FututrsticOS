@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 typedef enum {
     WINDOW_KIND_TERMINAL
 } window_kind_t;
@@ -24,6 +26,9 @@ typedef struct {
     int restore_y;
     int restore_w;
     int restore_h;
+
+    int fading;
+    uint64_t fade_start_tick;
 
     int used;
     window_kind_t kind;

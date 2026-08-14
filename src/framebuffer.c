@@ -225,6 +225,85 @@ void fb_draw_int(int x, int y, int n, color_t fg, color_t bg) {
     fb_draw_string(x, y, &buf[i], fg, bg);
 }
 
+void fb_draw_char_ex(int x, int y, char ch, color_t fg, color_t bg, int scale, int transparent) {
+    int idx = (unsigned char)ch;
+
+    if (idx < 32 || idx > 127)
+        idx = '?';
+
+    if (scale < 1)
+        scale = 1;
+
+    const char *glyph = font8x8_basic[idx];
+
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            int on = (glyph[row] & (1 << col)) != 0;
+
+            if (!on && transparent)
+                continue;
+
+            color_t color = on ? fg : bg;
+
+            for (int sy = 0; sy < scale; sy++)
+                for (int sx = 0; sx < scale; sx++)
+                    fb_put_pixel(x + col * scale + sx, y + row * scale + sy, color);
+        }
+    }
+}
+
+void fb_draw_string_ex(int x, int y, const char *s, color_t fg, color_t bg, int scale, int transparent) {
+    if (!s)
+        return;
+
+    if (scale < 1)
+        scale = 1;
+
+    int advance = 8 * scale;
+
+    for (int i = 0; s[i]; i++)
+        fb_draw_char_ex(x + i * advance, y, s[i], fg, bg, scale, transparent);
+}
+
+void fb_draw_int_ex(int x, int y, int n, color_t fg, color_t bg, int scale, int transparent) {
+    char buf[24];
+
+    int i = 23;
+    buf[i] = '\0';
+
+    unsigned int u;
+
+    if (n < 0)
+        u = (unsigned int)(-n);
+    else
+        u = (unsigned int)n;
+
+    if (u == 0) {
+        buf[--i] = '0';
+    } else {
+        while (u) {
+            buf[--i] = (char)('0' + (u % 10));
+            u /= 10;
+        }
+    }
+
+    if (n < 0)
+        buf[--i] = '-';
+
+    fb_draw_string_ex(x, y, &buf[i], fg, bg, scale, transparent);
+}
+
+int fb_text_width(const char *s, int scale) {
+    if (!s || scale < 1)
+        return 0;
+
+    int len = 0;
+    while (s[len])
+        len++;
+
+    return len * 8 * scale;
+}
+
 static void blit_rect(int x, int y, int w, int h) {
     if (!draw_buf || !display_buf || !fb_addr)
         return;
