@@ -16,7 +16,6 @@ typedef struct { uint8_t r, g, b; } color_t;
 #define COLOR_PURPLE    RGB(160,60,220)
 #define COLOR_ORANGE    RGB(240,130,30)
 
-/* dirty rectangle — tell fb_present_rects which regions changed */
 typedef struct { int x, y, w, h; } fb_rect_t;
 
 int     fb_init(void *mb2_info);
@@ -28,6 +27,7 @@ void    fb_put_pixel(int x, int y, color_t c);
 color_t fb_get_pixel(int x, int y);
 void    fb_clear(color_t c);
 void    fb_fill_rect(int x, int y, int w, int h, color_t c);
+void    fb_draw_image(int x, int y, int w, int h, const color_t *pixels);
 void    fb_draw_char(int x, int y, char ch, color_t fg, color_t bg);
 void    fb_draw_string(int x, int y, const char *s, color_t fg, color_t bg);
 void    fb_draw_int(int x, int y, int n, color_t fg, color_t bg);

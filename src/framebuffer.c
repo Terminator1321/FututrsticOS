@@ -162,6 +162,16 @@ void fb_fill_rect(int x, int y, int w, int h, color_t c) {
     }
 }
 
+void fb_draw_image(int x, int y, int w, int h, const color_t *pixels) {
+    if (!pixels || w <= 0 || h <= 0)
+        return;
+
+    for (int dy = 0; dy < h; dy++) {
+        for (int dx = 0; dx < w; dx++)
+            fb_put_pixel(x + dx, y + dy, pixels[(uint32_t)dy * (uint32_t)w + dx]);
+    }
+}
+
 void fb_draw_char(int x, int y, char ch, color_t fg, color_t bg) {
     int idx = (unsigned char)ch;
 

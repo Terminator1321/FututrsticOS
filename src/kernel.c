@@ -9,9 +9,11 @@
 #include "system/system.h"
 
 #include "drivers/keyboard/keyboard.h"
+#include "drivers/mouse/mouse.h"
 #include "drivers/timer/timer.h"
 #include "fs/fs.h"
 #include "gdt.h"
+#include "gui/gui.h"
 #include "idt.h"
 #include "syscalls.h"
 
@@ -77,6 +79,10 @@ void kmain(void *mb2_info) {
 
     terminal_print("Keyboard initialized.\n");
 
+    mouse_init();
+
+    terminal_print("Mouse initialized.\n");
+
     timer_init(100);
 
     terminal_print("Timer initialized (100 Hz).\n");
@@ -92,11 +98,6 @@ void kmain(void *mb2_info) {
         terminal_print("(No valid NANOFS2 superblock found on disk 0 -\n");
         terminal_print(" make sure disk.img is attached, e.g. via\n");
         terminal_print(" 'qemu-system-x86_64 ... -drive file=disk.img,format=raw,if=ide'.)\n");
-
-        /* IDT/keyboard are already set up at this point, so it's safe to
-         * enable interrupts here instead of halting completely dark. This
-         * keeps the machine responsive (and the keyboard IRQ counter
-         * moving) instead of looking indistinguishably frozen. */
         __asm__ volatile("sti");
 
         for (;;)
@@ -110,9 +111,17 @@ void kmain(void *mb2_info) {
     terminal_print("Shell initialized.\n");
     terminal_print("> ");
 
+    gui_init();
+
+    terminal_print("Desktop initialized.\n");
+
     __asm__ volatile("sti");
 
     for (;;) {
+        mouse_tick();
+        gui_update();
+        gui_draw();
+
         __asm__ volatile("hlt");
     }
 }

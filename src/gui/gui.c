@@ -20,6 +20,48 @@ static color_t  cursor_bg[CURSOR_W * CURSOR_H];
 static int prev_win_x, prev_win_y, prev_win_w, prev_win_h;
 static int first_draw = 1;
 
+// Desktop background. NULL means "just fill BG_COLOR" (today's default).
+// gui_set_background() swaps this in later without touching any of the
+// drawing logic below - it's just another pixel source.
+static const color_t *bg_pixels = 0;
+static int bg_width = 0;
+static int bg_height = 0;
+
+void gui_set_background(const color_t *pixels, int width, int height) {
+    bg_pixels = pixels;
+    bg_width = width;
+    bg_height = height;
+    gui_dirty = 1; // force a full redraw with the new background
+}
+
+// Paint the whole background (image if one is set, else flat BG_COLOR).
+static void draw_background_full(void) {
+    if (bg_pixels && bg_width > 0 && bg_height > 0)
+        fb_draw_image(0, 0, bg_width, bg_height, bg_pixels);
+    else
+        fb_clear(BG_COLOR);
+}
+
+// Repaint just one rectangle of background - used to erase whatever used
+// to be at the window's old position before redrawing it at the new one.
+static void draw_background_rect(int x, int y, int w, int h) {
+    if (bg_pixels && bg_width > 0 && bg_height > 0) {
+        if (x < 0) { w += x; x = 0; }
+        if (y < 0) { h += y; y = 0; }
+        if (x + w > bg_width)  w = bg_width  - x;
+        if (y + h > bg_height) h = bg_height - y;
+
+        for (int dy = 0; dy < h; dy++) {
+            const color_t *row = bg_pixels + (uint32_t)(y + dy) * (uint32_t)bg_width + x;
+
+            for (int dx = 0; dx < w; dx++)
+                fb_put_pixel(x + dx, y + dy, row[dx]);
+        }
+    } else {
+        fb_fill_rect(x, y, w, h, BG_COLOR);
+    }
+}
+
 static window_t terminal_window = {
     .x = 200, .y = 120, .width = 500, .height = 300
 };
@@ -47,13 +89,12 @@ void gui_draw(void) {
         if (first_draw) {
             // very first frame — full clear needed
             first_draw = 0;
-            fb_clear(BG_COLOR);
+            draw_background_full();
             draw_window();
             dirty[ndirty++] = (fb_rect_t){ 0, 0, fb_width(), fb_height() };
         } else {
-            // erase old window position with background color only
-            fb_fill_rect(prev_win_x, prev_win_y,
-                         prev_win_w, prev_win_h, BG_COLOR);
+            // erase old window position with the background
+            draw_background_rect(prev_win_x, prev_win_y, prev_win_w, prev_win_h);
             dirty[ndirty++] = (fb_rect_t){
                 prev_win_x, prev_win_y, prev_win_w, prev_win_h
             };
