@@ -23,3 +23,4 @@ int mouse_get_y(void);
 int mouse_left(void);
 int mouse_right(void);
 int mouse_middle(void);
+int mouse_get_scroll(void);

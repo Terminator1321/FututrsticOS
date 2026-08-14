@@ -40,3 +40,4 @@ int fs_change_dir(const char *name);
 int fs_list(fs_inode_t *out, int max_out);
 const char *fs_get_pwd(void);
 int fs_stat(const char *name, fs_inode_t *out);
+void fs_disk_stats(uint32_t *used_sectors, uint32_t *total_sectors);

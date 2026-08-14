@@ -8,3 +8,4 @@ void gui_draw(void);
 void gui_invalidate(void);
 void gui_set_background(const color_t *pixels, int width, int height);
 void gui_set_bg_color(color_t color);
+void gui_restore_terminal(void);

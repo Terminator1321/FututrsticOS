@@ -48,3 +48,5 @@ int process_exec(const char *name);
 // process is RUNNING, frame is left untouched and control just falls back
 // into the kernel's idle loop.
 void scheduler_tick(interrupt_frame_t *frame);
+
+uint64_t process_get_busy_ticks(void);

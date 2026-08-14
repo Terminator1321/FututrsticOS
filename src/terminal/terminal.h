@@ -20,3 +20,6 @@ void terminal_set_viewport(int x, int y, int w, int h);
 // Move an already-established viewport (same size, new position) and
 // redraw in place - used when the GUI window it lives in is dragged.
 void terminal_move_viewport(int x, int y);
+
+void terminal_scroll(int lines);
+int terminal_contains(int x, int y);

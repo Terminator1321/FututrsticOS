@@ -6,6 +6,7 @@
 #include "../gui/wallpaper.h"
 #include "../io.h"
 #include "../memory/kmalloc.h"
+#include "../memory/pmm.h"
 #include "../process/process.h"
 #include "../system/system.h"
 #include "terminal.h"
@@ -81,7 +82,7 @@ static void execute_command(void) {
 
     } else if (str_eq(cmd_buf, "help")) {
         terminal_print("Commands:\n");
-        terminal_print("  System  : ver, help, clear, uptime, meminfo, reboot, shutdown\n");
+        terminal_print("  System  : ver, help, clear, uptime, meminfo, usage, reboot, shutdown\n");
         terminal_print("  Disk    : diskread, diskwrite, format, mount\n");
         terminal_print("  Files   : touch <name>, ls, cat <file>, write <file> <text>\n");
         terminal_print("            append <file> <text>, rm <file>, mv <old> <new>\n");
@@ -90,6 +91,7 @@ static void execute_command(void) {
         terminal_print("  Other   : say <text>, alloc\n");
         terminal_print("  Desktop : bg <r> <g> <b>, bg default, bg image\n");
         terminal_print("  Process : run <program>\n");
+        terminal_print("  Window  : show\n");
     } else if (str_eq(cmd_buf, "clear")) {
         terminal_clear();
     } else if (str_eq(cmd_buf, "say")) {
@@ -124,6 +126,41 @@ static void execute_command(void) {
         terminal_print(" / ");
         print_uint(kmalloc_total());
         terminal_print(" bytes\n");
+    } else if (str_eq(cmd_buf, "usage")) {
+        uint64_t total_ticks = timer_get_ticks();
+        uint64_t busy_ticks = process_get_busy_ticks();
+        uint64_t cpu_percent = total_ticks ? (busy_ticks * 100) / total_ticks : 0;
+
+        uint64_t total_pages = pmm_get_total_pages();
+        uint64_t free_pages = pmm_get_free_pages();
+        uint64_t used_pages = total_pages - free_pages;
+        uint64_t ram_percent = total_pages ? (used_pages * 100) / total_pages : 0;
+
+        uint32_t used_sectors, total_sectors;
+        fs_disk_stats(&used_sectors, &total_sectors);
+        uint64_t disk_free_kb = ((uint64_t)(total_sectors - used_sectors) * 512) / 1024;
+        uint64_t disk_total_kb = ((uint64_t)total_sectors * 512) / 1024;
+        uint64_t disk_percent = total_sectors ? ((uint64_t)used_sectors * 100) / total_sectors : 0;
+
+        terminal_print("CPU  : ");
+        print_uint(cpu_percent);
+        terminal_print("%\n");
+
+        terminal_print("RAM  : ");
+        print_uint(used_pages * 4);
+        terminal_print(" / ");
+        print_uint(total_pages * 4);
+        terminal_print(" KB (");
+        print_uint(ram_percent);
+        terminal_print("%)\n");
+
+        terminal_print("Disk : ");
+        print_uint(disk_free_kb);
+        terminal_print(" KB free / ");
+        print_uint(disk_total_kb);
+        terminal_print(" KB (");
+        print_uint(disk_percent);
+        terminal_print("% used)\n");
     } else if (str_eq(cmd_buf, "alloc")) {
         void *p = kmalloc(64);
         if (p)
@@ -371,6 +408,9 @@ static void execute_command(void) {
                 terminal_print("Usage: bg <r> <g> <b>  (each 0-255)\n");
             }
         }
+    } else if (str_eq(cmd_buf, "show")) {
+        gui_restore_terminal();
+        terminal_print("Terminal shown\n");
     } else if (str_eq(cmd_buf, "run")) {
         if (!args || !*args) {
             terminal_print("Usage: run <program>\n");

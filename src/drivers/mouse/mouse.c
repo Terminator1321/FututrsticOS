@@ -24,9 +24,11 @@ static int mouse_y = 0;
 static int prev_x = -1;
 static int prev_y = -1;
 
-static uint8_t packet[3];
+static uint8_t packet[4];
 static uint8_t packet_index = 0;
 static uint8_t packet_ready = 0;
+static int packet_size = 3;
+static int scroll_accum = 0;
 
 static uint8_t buttons = 0;
 
@@ -84,6 +86,29 @@ void mouse_init(void) {
         return;
     if (mouse_read(&ack) != 0)
         return;
+
+    mouse_write(0xF3);
+    mouse_read(&ack);
+    mouse_write(200);
+    mouse_read(&ack);
+
+    mouse_write(0xF3);
+    mouse_read(&ack);
+    mouse_write(100);
+    mouse_read(&ack);
+
+    mouse_write(0xF3);
+    mouse_read(&ack);
+    mouse_write(80);
+    mouse_read(&ack);
+
+    mouse_write(0xF2);
+    mouse_read(&ack);
+
+    uint8_t device_id = 0;
+    if (mouse_read(&device_id) == 0 && device_id == 3)
+        packet_size = 4;
+
     if (mouse_write(0xF4) != 0)
         return;
     if (mouse_read(&ack) != 0)
@@ -110,7 +135,7 @@ void mouse_handler(void) {
 
     packet[packet_index++] = byte;
 
-    if (packet_index == 3) {
+    if (packet_index == packet_size) {
         packet_index = 0;
         packet_ready = 1;
     }
@@ -142,7 +167,14 @@ int mouse_tick(void) {
     if (new_y >= fb_height())
         new_y = fb_height() - 1;
 
-    if (new_x == mouse_x && new_y == mouse_y && new_buttons == buttons)
+    int dz = 0;
+    if (packet_size == 4)
+        dz = (int8_t)packet[3];
+
+    if (dz)
+        scroll_accum += dz;
+
+    if (new_x == mouse_x && new_y == mouse_y && new_buttons == buttons && dz == 0)
         return 0;
 
     mouse_x = new_x;
@@ -150,6 +182,12 @@ int mouse_tick(void) {
     buttons = new_buttons;
 
     return 1;
+}
+
+int mouse_get_scroll(void) {
+    int value = scroll_accum;
+    scroll_accum = 0;
+    return value;
 }
 
 mouse_state_t mouse_get_state(void) {

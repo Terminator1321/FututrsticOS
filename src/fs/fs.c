@@ -4,6 +4,7 @@
 #include "../libc/string.h"
 
 static uint32_t current_dir = 0;
+static uint32_t mounted_total_sectors = 131072;
 #define INODES_PER_SECTOR (512 / sizeof(fs_inode_t))
 
 static void inode_read(uint32_t id, fs_inode_t *out) {
@@ -97,6 +98,7 @@ void fs_format(void) {
         ata_write_sector(FS_INODE_TABLE_START + s, empty);
     }
     current_dir = 0;
+    mounted_total_sectors = sb->total_sectors;
 }
 
 int fs_mount(void) {
@@ -115,6 +117,7 @@ int fs_mount(void) {
     if (sb->version != FS_VERSION)
         return 0;
     current_dir = 0;
+    mounted_total_sectors = sb->total_sectors;
     return 1;
 }
 
@@ -455,4 +458,26 @@ const char *fs_get_pwd(void) {
     strncpy(path, &tmp[pos], sizeof(path));
     path[sizeof(path) - 1] = '\0';
     return path;
+}
+
+void fs_disk_stats(uint32_t *used_sectors, uint32_t *total_sectors) {
+    uint32_t used = FS_DATA_START;
+
+    for (uint32_t id = 1; id <= FS_MAX_INODES; id++) {
+        fs_inode_t node;
+        inode_read(id, &node);
+
+        if (node.name[0] == '\0')
+            continue;
+
+        for (int b = 0; b < FS_MAX_BLOCKS; b++) {
+            if (node.blocks[b] >= used)
+                used = node.blocks[b] + 1;
+        }
+    }
+
+    if (used_sectors)
+        *used_sectors = used;
+    if (total_sectors)
+        *total_sectors = mounted_total_sectors;
 }

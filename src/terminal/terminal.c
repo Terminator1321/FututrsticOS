@@ -249,3 +249,22 @@ void terminal_move_viewport(int x, int y) {
     redraw_terminal();
     terminal_draw_cursor();
 }
+
+void terminal_scroll(int lines) {
+    int max_scroll = (buf_row >= rows) ? (buf_row - rows + 1) : 0;
+
+    scroll_top -= lines;
+
+    if (scroll_top < 0)
+        scroll_top = 0;
+    if (scroll_top > max_scroll)
+        scroll_top = max_scroll;
+
+    redraw_terminal();
+    terminal_draw_cursor();
+}
+
+int terminal_contains(int x, int y) {
+    return x >= origin_x && x < origin_x + W &&
+           y >= origin_y && y < origin_y + H;
+}

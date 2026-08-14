@@ -7,6 +7,8 @@
 #include "../riru/loader.h"
 #include "../riru/user.h"
 #include "../terminal/shell.h"
+#include "../drivers/mouse/mouse.h"
+#include "../gui/gui.h"
 
 // The process table. Each slot is either UNUSED (never used, or reclaimed),
 // RUNNING, or EXITED (finished but its slot/pid/exit_code are kept around
@@ -20,6 +22,7 @@ static process_t process_table[MAX_PROCESSES];
 static int current_index = -1;
 
 static uint64_t next_pid = 1;
+static uint64_t busy_ticks = 0;
 
 void process_init(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -163,8 +166,13 @@ void process_exit_return(void) {
     terminal_print("> ");
     fb_present();
 
-    for (;;)
+    for (;;) {
+        mouse_tick();
+        gui_update();
+        gui_draw();
+
         __asm__ volatile("hlt");
+    }
 }
 
 void scheduler_tick(interrupt_frame_t *frame) {
@@ -213,6 +221,11 @@ void scheduler_tick(interrupt_frame_t *frame) {
     vmm_switch_address_space(process_table[next].cr3);
 
     current_index = next;
+    busy_ticks++;
+}
+
+uint64_t process_get_busy_ticks(void) {
+    return busy_ticks;
 }
 
 process_t *process_current(void) {

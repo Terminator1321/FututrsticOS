@@ -32,28 +32,15 @@ void kmain(void *mb2_info) {
 
     terminal_init(system_width, system_height);
 
-    terminal_print("TinyOS 64-bit\n");
-    terminal_print("-------------------------\n");
-    terminal_print("Kernel initialized.\n");
-
     memory_detect(mb2_info);
 
     pmm_init(mb2_info);
     kmalloc_init();
 
-    terminal_print("Memory initialized.\n");
-
     vmm_init();
-
-    terminal_print("VMM initialized.\n");
-
     vmm_prepare_kernel_space();
 
-    terminal_print("Kernel address space prepared.\n");
-
     fb_enable_backbuffer();
-
-    terminal_print("Backbuffer initialized.\n");
 
     if (vmm_map_kernel_memory() != 0) {
         terminal_print("VMM: kernel memory mapping failed.\n");
@@ -62,37 +49,14 @@ void kmain(void *mb2_info) {
             __asm__ volatile("cli; hlt");
     }
 
-    terminal_print("Kernel memory mapped.\n");
-
     vmm_switch_kernel_space();
 
-    terminal_print("CR3 switched successfully.\n");
-
     gdt_init();
-
-    terminal_print("GDT initialized.\n");
-
     idt_init();
-
-    terminal_print("IDT initialized.\n");
-
     keyboard_init();
-
-    terminal_print("Keyboard initialized.\n");
-
     mouse_init();
-
-    terminal_print("Mouse initialized.\n");
-
     timer_init(100);
-
-    terminal_print("Timer initialized (100 Hz).\n");
-
     syscall_init();
-
-    terminal_print("Syscall initialized.\n");
-
-    terminal_print("Mounting filesystem...\n");
 
     if (fs_mount() == 0) {
         terminal_print("Filesystem mount failed.\n");
@@ -105,22 +69,11 @@ void kmain(void *mb2_info) {
             __asm__ volatile("hlt");
     }
 
-    terminal_print("Filesystem mounted.\n");
-
     shell_init();
 
-    terminal_print("Shell initialized.\n");
-    terminal_print("> ");
-
-    // Optional: a wallpaper packed onto disk with wallpaper_pack (see
-    // src/tools/wallpaper_pack.c) takes over as the desktop background.
-    // Silently does nothing if none was ever packed.
-    if (wallpaper_load() == 0)
-        terminal_print("Wallpaper loaded.\n");
+    wallpaper_load();
 
     gui_init();
-
-    terminal_print("Desktop initialized.\n");
 
     __asm__ volatile("sti");
 
