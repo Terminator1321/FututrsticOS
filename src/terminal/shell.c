@@ -8,6 +8,7 @@
 #include "../memory/kmalloc.h"
 #include "../memory/pmm.h"
 #include "../process/process.h"
+#include "../system/clock.h"
 #include "../system/system.h"
 #include "terminal.h"
 
@@ -60,6 +61,29 @@ static int parse_rgb(const char *args, int *r, int *g, int *b) {
            parse_color_channel(&p, b);
 }
 
+static int parse_uint_field(const char **s, int *out) {
+    while (**s == ' ')
+        (*s)++;
+
+    if (**s < '0' || **s > '9')
+        return 0;
+
+    int v = 0;
+    while (**s >= '0' && **s <= '9') {
+        v = v * 10 + (**s - '0');
+        (*s)++;
+    }
+
+    *out = v;
+    return 1;
+}
+
+static void print_2digit(int v) {
+    if (v < 10)
+        terminal_putchar('0');
+    print_uint(v);
+}
+
 static void show_prompt(void) {
     terminal_print(fs_get_pwd());
     terminal_print("> ");
@@ -83,6 +107,7 @@ static void execute_command(void) {
     } else if (str_eq(cmd_buf, "help")) {
         terminal_print("Commands:\n");
         terminal_print("  System  : ver, help, clear, uptime, meminfo, usage, reboot, shutdown\n");
+        terminal_print("            time, time set <hh> <mm> <ss>\n");
         terminal_print("  Disk    : diskread, diskwrite, format, mount\n");
         terminal_print("  Files   : touch <name>, ls, cat <file>, write <file> <text>\n");
         terminal_print("            append <file> <text>, rm <file>, mv <old> <new>\n");
@@ -106,6 +131,42 @@ static void execute_command(void) {
         terminal_print("Uptime: ");
         print_uint(seconds);
         terminal_print(" seconds\n");
+    } else if (str_eq(cmd_buf, "time")) {
+        if (!args || !*args) {
+            int h, m, s;
+            clock_get(&h, &m, &s);
+            print_2digit(h);
+            terminal_putchar(':');
+            print_2digit(m);
+            terminal_putchar(':');
+            print_2digit(s);
+            terminal_putchar('\n');
+        } else {
+            char *sub = args;
+            char *rest = 0;
+            for (int i = 0; sub[i]; i++) {
+                if (sub[i] == ' ') {
+                    sub[i] = '\0';
+                    rest = &sub[i + 1];
+                    break;
+                }
+            }
+
+            if (str_eq(sub, "set") && rest && *rest) {
+                const char *p = rest;
+                int h, m, s;
+
+                if (parse_uint_field(&p, &h) && parse_uint_field(&p, &m) && parse_uint_field(&p, &s)) {
+                    clock_set(h, m, s);
+                    terminal_print("Time set\n");
+                } else {
+                    terminal_print("Usage: time set <hh> <mm> <ss>\n");
+                }
+            } else {
+                terminal_print("Usage: time\n");
+                terminal_print("       time set <hh> <mm> <ss>\n");
+            }
+        }
     } else if (str_eq(cmd_buf, "reboot")) {
         terminal_print("Rebooting...\n");
         reboot_system();
