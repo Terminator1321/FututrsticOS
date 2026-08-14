@@ -24,6 +24,7 @@ DISK = disk.img
 
 RIRU_PACK = $(SRC)/tools/riru_pack
 NANOFS_IMAGE = $(SRC)/tools/nanofs_image
+WALLPAPER_PACK = $(SRC)/tools/wallpaper_pack
 
 GRUB_MKRESCUE := $(shell command -v grub-mkrescue 2>/dev/null || command -v grub2-mkrescue 2>/dev/null)
 
@@ -54,6 +55,9 @@ $(RIRU_PACK): $(SRC)/tools/riru_pack.c
 $(NANOFS_IMAGE): $(SRC)/tools/nanofs_img.c
 	$(CC) $(HOST_CFLAGS) $< -o $@
 
+$(WALLPAPER_PACK): $(SRC)/tools/wallpaper_pack.c $(SRC)/wallpaper_layout.h
+	$(CC) $(HOST_CFLAGS) $< -o $@
+
 test/hello.o: test/hello.c
 	@mkdir -p test
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -73,10 +77,26 @@ $(ISO): $(KERNEL) grub.cfg
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $@ $(BUILD)/iso
 
+# Packs a raw RGB888 image onto an existing disk.img as the desktop
+# wallpaper. disk.img must already exist (run `make filesystem` or `make
+# all` first). Usage:
+#   make wallpaper IMG=wallpaper.rgb WIDTH=1024 HEIGHT=768
+IMG ?=
+WIDTH ?= 1920
+HEIGHT ?= 1080
+
+wallpaper: $(WALLPAPER_PACK) $(DISK)
+	@if [ -z "$(IMG)" ]; then \
+		echo "Usage: make wallpaper IMG=<raw-rgb-file> [WIDTH=1024] [HEIGHT=768]"; \
+		exit 1; \
+	fi
+	$(WALLPAPER_PACK) $(IMG) $(WIDTH) $(HEIGHT) $(DISK)
+
 run: all
 	$(QEMU) \
 		-cdrom $(ISO) \
 		-drive file=$(DISK),format=raw,if=ide \
+		-vga std \
 		-m 512M
 
 clean:
@@ -89,6 +109,7 @@ rebuild: clean
 	rm -f test/hello.riru
 	rm -f $(RIRU_PACK)
 	rm -f $(NANOFS_IMAGE)
+	rm -f $(WALLPAPER_PACK)
 	$(MAKE) all
 
 kernel: $(KERNEL)
@@ -99,4 +120,4 @@ filesystem: $(DISK)
 
 iso: $(ISO)
 
-.PHONY: all run clean rebuild kernel riru filesystem iso
+.PHONY: all run clean rebuild kernel riru filesystem iso wallpaper

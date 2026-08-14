@@ -2,6 +2,8 @@
 #include "../drivers/ata/ata.h"
 #include "../drivers/timer/timer.h"
 #include "../fs/fs.h"
+#include "../gui/gui.h"
+#include "../gui/wallpaper.h"
 #include "../io.h"
 #include "../memory/kmalloc.h"
 #include "../process/process.h"
@@ -27,6 +29,34 @@ static int str_eq(const char *a, const char *b) {
         b++;
     }
     return (*a == '\0' && *b == '\0');
+}
+
+// Reads one unsigned decimal number starting at *s (skipping leading
+// spaces), advances *s past it, and clamps the result to 0-255 so it can
+// feed straight into an RGB() color channel. Returns 0 if there's no digit
+// there to read.
+static int parse_color_channel(const char **s, int *out) {
+    while (**s == ' ')
+        (*s)++;
+
+    if (**s < '0' || **s > '9')
+        return 0;
+
+    int v = 0;
+    while (**s >= '0' && **s <= '9') {
+        v = v * 10 + (**s - '0');
+        (*s)++;
+    }
+
+    *out = (v > 255) ? 255 : v;
+    return 1;
+}
+
+static int parse_rgb(const char *args, int *r, int *g, int *b) {
+    const char *p = args;
+    return parse_color_channel(&p, r) &&
+           parse_color_channel(&p, g) &&
+           parse_color_channel(&p, b);
 }
 
 static void show_prompt(void) {
@@ -58,6 +88,7 @@ static void execute_command(void) {
         terminal_print("            stat <name>\n");
         terminal_print("  Dirs    : mkdir <name>, cd <dir>, pwd\n");
         terminal_print("  Other   : say <text>, alloc\n");
+        terminal_print("  Desktop : bg <r> <g> <b>, bg default, bg image\n");
         terminal_print("  Process : run <program>\n");
     } else if (str_eq(cmd_buf, "clear")) {
         terminal_clear();
@@ -315,6 +346,31 @@ static void execute_command(void) {
         terminal_putchar('\n');
     } else if (str_eq(cmd_buf, "shutdown")) {
         shutdown_system();
+    } else if (str_eq(cmd_buf, "bg")) {
+        if (!args || !*args) {
+            terminal_print("Usage: bg <r> <g> <b>  (each 0-255)\n");
+            terminal_print("       bg default\n");
+            terminal_print("       bg image\n");
+        } else if (str_eq(args, "default")) {
+            gui_set_bg_color(RGB(20, 20, 20));
+            terminal_print("Background reset\n");
+        } else if (str_eq(args, "image")) {
+            int r = wallpaper_load();
+            if (r == 0)
+                terminal_print("Wallpaper loaded from disk\n");
+            else if (r == -1)
+                terminal_print("No wallpaper on disk (pack one with wallpaper_pack first)\n");
+            else
+                terminal_print("Wallpaper header on disk is invalid\n");
+        } else {
+            int r, g, b;
+            if (parse_rgb(args, &r, &g, &b)) {
+                gui_set_bg_color(RGB((uint8_t)r, (uint8_t)g, (uint8_t)b));
+                terminal_print("Background updated\n");
+            } else {
+                terminal_print("Usage: bg <r> <g> <b>  (each 0-255)\n");
+            }
+        }
     } else if (str_eq(cmd_buf, "run")) {
         if (!args || !*args) {
             terminal_print("Usage: run <program>\n");

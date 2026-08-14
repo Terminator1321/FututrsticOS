@@ -13,6 +13,13 @@
 static int W, H;
 static int cols, rows;
 
+// Where the terminal's (0,0) lands on the framebuffer, and the pixel size
+// of the area it's allowed to draw into. Defaults to the whole screen
+// (set by terminal_init) until something - the GUI, once its window is
+// up - narrows it with terminal_set_viewport()/terminal_move_viewport().
+static int origin_x = 0;
+static int origin_y = 0;
+
 static char screen_buf[MAX_ROWS][MAX_COLS];
 
 static int buf_row = 0;
@@ -23,7 +30,7 @@ static int blink_counter = 0;
 static int cursor_visible = 1;
 
 static void redraw_terminal(void) {
-    fb_fill_rect(0, 0, W, H, COL_BG);
+    fb_fill_rect(origin_x, origin_y, W, H, COL_BG);
 
     for (int r = 0; r < rows; r++) {
         int buf_r = scroll_top + r;
@@ -37,7 +44,7 @@ static void redraw_terminal(void) {
             if (!ch)
                 break;
 
-            fb_draw_char(c * CHAR_W, r * CHAR_H, ch, COL_TEXT, COL_BG);
+            fb_draw_char(origin_x + c * CHAR_W, origin_y + r * CHAR_H, ch, COL_TEXT, COL_BG);
         }
     }
 }
@@ -81,7 +88,7 @@ void terminal_putchar(char c) {
 
             screen_buf[buf_row][buf_col] = 0;
 
-            fb_fill_rect(buf_col * CHAR_W, (buf_row - scroll_top) * CHAR_H, CHAR_W, CHAR_H, COL_BG);
+            fb_fill_rect(origin_x + buf_col * CHAR_W, origin_y + (buf_row - scroll_top) * CHAR_H, CHAR_W, CHAR_H, COL_BG);
             fb_present();
         }
 
@@ -93,7 +100,7 @@ void terminal_putchar(char c) {
 
     screen_buf[buf_row][buf_col] = c;
 
-    fb_draw_char(buf_col * CHAR_W, (buf_row - scroll_top) * CHAR_H, c, COL_TEXT, COL_BG);
+    fb_draw_char(origin_x + buf_col * CHAR_W, origin_y + (buf_row - scroll_top) * CHAR_H, c, COL_TEXT, COL_BG);
 
     buf_col++;
 
@@ -123,21 +130,25 @@ void terminal_clear(void) {
     buf_col = 0;
     scroll_top = 0;
 
-    fb_clear(COL_BG);
+    // Was fb_clear(COL_BG), which blanks the *entire* framebuffer - fine
+    // back when the terminal always owned the whole screen, but wrong once
+    // it's confined to a window's content area, where it must only touch
+    // its own rectangle and leave the desktop/window chrome alone.
+    fb_fill_rect(origin_x, origin_y, W, H, COL_BG);
     fb_present();
 }
 
 void terminal_hide_cursor(void) {
-    int x = buf_col * CHAR_W;
-    int y = (buf_row - scroll_top) * CHAR_H;
+    int x = origin_x + buf_col * CHAR_W;
+    int y = origin_y + (buf_row - scroll_top) * CHAR_H;
 
     fb_fill_rect(x, y + CHAR_H - 2, CHAR_W, 2, COL_BG);
     fb_present();
 }
 
 void terminal_draw_cursor(void) {
-    int x = buf_col * CHAR_W;
-    int y = (buf_row - scroll_top) * CHAR_H;
+    int x = origin_x + buf_col * CHAR_W;
+    int y = origin_y + (buf_row - scroll_top) * CHAR_H;
 
     fb_fill_rect(x, y + CHAR_H - 2, CHAR_W, 2, COL_TEXT);
     fb_present();
@@ -159,6 +170,9 @@ void terminal_tick(void) {
 }
 
 void terminal_init(int width, int height) {
+    origin_x = 0;
+    origin_y = 0;
+
     W = width;
     H = height;
 
@@ -180,6 +194,58 @@ void terminal_init(int width, int height) {
         rows = MAX_ROWS;
 
     terminal_clear();
+    redraw_terminal();
+    terminal_draw_cursor();
+}
+
+static void clamp_cursor_to_grid(void) {
+    // Called after cols/rows shrink (switching into a smaller window
+    // viewport). Existing content/state was produced against the old,
+    // larger grid, so pull the cursor back onto the new one - otherwise
+    // it would draw outside the viewport until the next keystroke
+    // happened to trigger a scroll.
+    if (buf_col > cols)
+        buf_col = cols;
+
+    if (buf_row >= MAX_ROWS)
+        buf_row = MAX_ROWS - 1;
+
+    scroll_top = (buf_row >= rows) ? (buf_row - rows + 1) : 0;
+
+    if (scroll_top < 0)
+        scroll_top = 0;
+}
+
+void terminal_set_viewport(int x, int y, int w, int h) {
+    origin_x = x;
+    origin_y = y;
+    W = w;
+    H = h;
+
+    cols = W / CHAR_W;
+    rows = H / CHAR_H;
+
+    if (cols > MAX_COLS)
+        cols = MAX_COLS;
+
+    if (rows > MAX_ROWS)
+        rows = MAX_ROWS;
+
+    // Note: this only re-homes the existing screen_buf onto the new grid,
+    // it doesn't reflow lines that no longer fit within the narrower
+    // `cols` - they're just truncated on screen (the buffered characters
+    // themselves are untouched). Good enough for confining an existing
+    // full-screen console into a window; a real reflow isn't needed here.
+    clamp_cursor_to_grid();
+
+    redraw_terminal();
+    terminal_draw_cursor();
+}
+
+void terminal_move_viewport(int x, int y) {
+    origin_x = x;
+    origin_y = y;
+
     redraw_terminal();
     terminal_draw_cursor();
 }

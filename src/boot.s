@@ -11,8 +11,8 @@ mb2_start:
     dw 5        ; type
     dw 0        ; flags: required
     dd 20       ; size
-    dd 1024     ; preferred width
-    dd 768      ; preferred height
+    dd 1920     ; preferred width
+    dd 1080     ; preferred height
     dd 32       ; preferred bpp
 
     ; end tag
@@ -125,3 +125,4 @@ long_mode_start:
     cli
     hlt
     jmp .hang
+    

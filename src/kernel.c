@@ -14,6 +14,7 @@
 #include "fs/fs.h"
 #include "gdt.h"
 #include "gui/gui.h"
+#include "gui/wallpaper.h"
 #include "idt.h"
 #include "syscalls.h"
 
@@ -110,6 +111,12 @@ void kmain(void *mb2_info) {
 
     terminal_print("Shell initialized.\n");
     terminal_print("> ");
+
+    // Optional: a wallpaper packed onto disk with wallpaper_pack (see
+    // src/tools/wallpaper_pack.c) takes over as the desktop background.
+    // Silently does nothing if none was ever packed.
+    if (wallpaper_load() == 0)
+        terminal_print("Wallpaper loaded.\n");
 
     gui_init();
 
