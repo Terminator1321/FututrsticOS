@@ -97,7 +97,8 @@ run: all
 		-cdrom $(ISO) \
 		-drive file=$(DISK),format=raw,if=ide \
 		-vga std \
-		-m 512M
+		-m 2G \
+		-smp 4
 
 clean:
 	rm -rf $(BUILD)

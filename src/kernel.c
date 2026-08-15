@@ -8,6 +8,7 @@
 #include "memory/vmm.h"
 #include "system/system.h"
 
+#include "acpi/acpi.h"
 #include "drivers/keyboard/keyboard.h"
 #include "drivers/mouse/mouse.h"
 #include "drivers/timer/timer.h"
@@ -53,6 +54,7 @@ void kmain(void *mb2_info) {
 
     gdt_init();
     idt_init();
+    acpi_init(mb2_info);
     keyboard_init();
     mouse_init();
     timer_init(100);

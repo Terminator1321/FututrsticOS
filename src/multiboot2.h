@@ -31,8 +31,16 @@ typedef struct __attribute__((packed)) {
     uint8_t blue_mask;
 } mb2_tag_fb_t;
 
+typedef struct __attribute__((packed)) {
+    uint32_t type;
+    uint32_t size;
+    uint8_t rsdp[];
+} mb2_tag_acpi_t;
+
 #define MB2_TAG_END 0
 #define MB2_TAG_FB 8
+#define MB2_TAG_ACPI_OLD 14
+#define MB2_TAG_ACPI_NEW 15
 
 static inline mb2_tag_t *mb2_find_tag(mb2_info_t *info, uint32_t type) {
     mb2_tag_t *tag = (mb2_tag_t *)((uint8_t *)info + 8);

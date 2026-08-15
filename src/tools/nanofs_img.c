@@ -5,7 +5,7 @@
 
 #define SECTOR_SIZE 512
 
-#define DISK_SIZE_MB 64
+#define DISK_SIZE_MB 4096
 #define TOTAL_SECTORS ((DISK_SIZE_MB * 1024 * 1024) / SECTOR_SIZE)
 
 #define FS_MAGIC "NANOFS2"
