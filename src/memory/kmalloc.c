@@ -24,22 +24,11 @@ void *kmalloc(size_t size)
     if (size == 0)
         return 0;
 
-    terminal_print("KMALLOC: calculating pages\n");
     fb_present();
-
-    size_t total_size =
-        sizeof(allocation_header_t) + size;
-
-    uint64_t pages =
-        (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    terminal_print("KMALLOC: before PMM\n");
+    size_t total_size = sizeof(allocation_header_t) + size;
+    uint64_t pages = (total_size + PAGE_SIZE - 1) / PAGE_SIZE;
     fb_present();
-
-    uint64_t address =
-        pmm_alloc_pages(pages);
-
-    terminal_print("KMALLOC: after PMM\n");
+    uint64_t address = pmm_alloc_pages(pages);
     fb_present();
 
     if (address == 0)
@@ -49,18 +38,10 @@ void *kmalloc(size_t size)
         return 0;
     }
 
-    terminal_print("KMALLOC: before header\n");
     fb_present();
-
-    allocation_header_t *header =
-        (allocation_header_t *)(uintptr_t)address;
-
-    terminal_print("KMALLOC: header pointer created\n");
+    allocation_header_t *header = (allocation_header_t *)(uintptr_t)address;
     fb_present();
-
     header->magic = KMALLOC_MAGIC;
-
-    terminal_print("KMALLOC: magic written\n");
     fb_present();
 
     header->pages = pages;
